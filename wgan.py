@@ -28,18 +28,18 @@ class WGAN:
 		            .minimize(-self.D_loss, var_list=self.D_weight))
 
 		#debugging stuff
-		opt = tf.train.RMSPropOptimizer(learning_rate=1e-4)
-		for var in self.G_weight:
-			try :
-				opt.compute_gradients(self.G_loss, var_list = [var])
-				print(var)
-			except Exception as e:
-				# print(var)
-				print(e)
-				continue
+		# opt = tf.train.RMSPropOptimizer(learning_rate=1e-4)
+		# for var in self.G_weight:
+		# 	try :
+		# 		opt.compute_gradients(self.G_loss, var_list = [var])
+		# 		print(var)
+		# 	except Exception as e:
+		# 		# print(var)
+		# 		print(e)
+		# 		continue
 
-		# self.G_solver = (tf.train.RMSPropOptimizer(learning_rate=1e-4)
-		#             .minimize(self.G_loss, var_list=self.G_weight))
+		self.G_solver = (tf.train.RMSPropOptimizer(learning_rate=1e-4)
+		            .minimize(self.G_loss, var_list=self.G_weight))
 
 	def train(self):
 		pass
@@ -50,22 +50,25 @@ class WGAN:
 			if reuse:
 				scope.reuse_variables()
 				train = False
-			network = self.conv2d(input_frame, [4,4,3,128], [1,2,2,1], 'conv2d_1', group=self.G_weight) #32*32
+			network = self.conv2d(input_frame, [4,4,3,64], [1,2,2,1], 'conv2d_1', group=self.G_weight) #32*32
 			network = tf.nn.relu(self.batchnorm(network, train, 'batchnorm_1', group=self.G_weight))
-			network = self.conv2d(network, [4,4,128,256], [1,2,2,1], 'conv2d_2', group=self.G_weight) #16*16
+			network = self.conv2d(network, [4,4,64,128], [1,2,2,1], 'conv2d_2', group=self.G_weight) #16*16
 			network = tf.nn.relu(self.batchnorm(network, train, 'batchnorm_2', group=self.G_weight))
-			network = self.conv2d(network, [4,4,256,512], [1,2,2,1], 'conv2d_3', group=self.G_weight) #8*8
+			network = self.conv2d(network, [4,4,128,256], [1,2,2,1], 'conv2d_3', group=self.G_weight) #8*8
 			network = tf.nn.relu(self.batchnorm(network, train, 'batchnorm_3', group=self.G_weight))
-			network = tf.reshape(network, (-1,1,8,8,512))
-			network = self.deconv3d(network, [1,4,4,512,512], [-1,2,4,4,512], [1,1,1,1,1], 'deconv3d_1', group=self.G_weight)
+			network = self.conv2d(network, [4,4,256,512], [1,2,2,1], 'conv2d_4', group=self.G_weight) #4*4
 			network = tf.nn.relu(self.batchnorm(network, train, 'batchnorm_4', group=self.G_weight))
-			network = self.deconv3d(network, [2,4,4,256,512], [-1,4,8,8,256], [1,1,1,1,1], 'deconv3d_2', group=self.G_weight)
+			print(network)
+			network = tf.reshape(network, (-1,1,4,4,512))
+			network = self.deconv3d(network, [1,4,4,512,512], [-1,2,4,4,512], [1,1,1,1,1], 'deconv3d_1', group=self.G_weight)
 			network = tf.nn.relu(self.batchnorm(network, train, 'batchnorm_5', group=self.G_weight))
-			network = self.deconv3d(network, [4,4,4,128,256], [-1,8,16,16,128], [1,1,1,1,1], 'decov3d_3', group=self.G_weight)
+			network = self.deconv3d(network, [2,4,4,256,512], [-1,4,8,8,256], [1,1,1,1,1], 'deconv3d_2', group=self.G_weight)
 			network = tf.nn.relu(self.batchnorm(network, train, 'batchnorm_6', group=self.G_weight))
+			network = self.deconv3d(network, [4,4,4,128,256], [-1,8,16,16,128], [1,1,1,1,1], 'decov3d_3', group=self.G_weight)
+			network = tf.nn.relu(self.batchnorm(network, train, 'batchnorm_7', group=self.G_weight))
 			network = self.deconv3d(network, [4,4,4,64,128], [-1,16,32,32,64], [1,1,1,1,1], 'decov3d_4', group=self.G_weight)
 			print(network)
-			network = tf.nn.relu(self.batchnorm(network, train, 'batchnorm_7', group=self.G_weight))
+			network = tf.nn.relu(self.batchnorm(network, train, 'batchnorm_8', group=self.G_weight))
 			network = self.deconv3d(network, [4,4,4,3,64], [-1,32,64,64,3], [1,1,1,1,1], 'decov3d_5', group=self.G_weight)
 			print(network)
 		return network
@@ -105,7 +108,7 @@ class WGAN:
 	def deconv3d(self, incoming_layer, filter_shape, output_shape,
 			strides, name,  group, act=tf.identity,
 			padding='SAME'):
-
+		#this is buggy
 		with tf.variable_scope(name) as vs:
 			W = tf.get_variable(name='W', shape=filter_shape,
 				initializer=tf.truncated_normal_initializer(stddev=0.02))
