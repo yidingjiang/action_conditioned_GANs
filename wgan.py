@@ -21,6 +21,7 @@ class WGAN:
 		self.G_sample = self.naive_generator(self.x, reuse=True)
 		self.D_real = self.discriminator(self.true_frames, self.y, reuse=False)
 		self.D_sample = self.discriminator(self.G_train, self.y, reuse=True)
+		print("[*] all graphs compiled")
 		# [print(v) for v in self.G_weight]
 		self.D_loss = tf.reduce_mean(self.D_real) - tf.reduce_mean(self.D_sample)
 		self.G_loss = -tf.reduce_mean(self.D_sample)
