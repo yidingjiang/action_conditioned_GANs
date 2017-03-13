@@ -11,6 +11,9 @@ class WGAN:
 		self.build_graph(input_frame, label, real_frames, phase)
 
 	def build_graph(self, input_frame, label, real_frames, phase):
+		"""
+		Build the computational graph
+		"""
 		with tf.name_scope('data'):
 			self.x = tf.placeholder('float32', (None, self.input_height, self.input_width, 3), name='input_frame')
 			self.y = tf.placeholder('float32', (None, 1), name='label')
@@ -51,6 +54,15 @@ class WGAN:
 
 
 	def train(self, epoch_num=10000, D_per_G=5):
+		"""
+		Traning the network for specific number of epoch.
+		Train the discriminator *D_per_G* times for every one training of generator
+
+		param
+			epoch_num: 	maximum number of iteration for training
+			D_per_G:	number of times discriminator is trained for every single time
+						generator is trained
+		"""
 		sess = tf.Session()
 		sess.run(tf.initialize_all_variables())
 		for i in range(epoch_num):
@@ -84,6 +96,13 @@ class WGAN:
 
 
 	def naive_generator(self, input_frame, reuse):
+		"""
+		Build a non-conditioned generator
+
+		param
+			input_frame:	a tensorflow placeholder for the input_frame (32*32*3)
+			reuse:			specify whether the previous variables are shared
+		"""
 		with tf.variable_scope('generator') as scope:
 			train = not reuse
 			if reuse:
@@ -110,6 +129,13 @@ class WGAN:
 		return network
 
 	def discriminator(self, frames, label, reuse=False):
+		"""
+		Build a discriminator generator
+
+		param
+			frames:		a tensorflow placeholder for a series of frames (num_frames*32*32*3)
+			reuse:		specify whether the previous variables are shared
+		"""
 		with tf.variable_scope('discriminator') as scope:
 			train = not reuse
 			if reuse:
