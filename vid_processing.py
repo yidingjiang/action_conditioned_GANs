@@ -2,7 +2,6 @@ import numpy as np
 import cv2
 import argparse
 import os
-import pickle
 
 
 def get_frames(fname, num_frames=16, frame_freq=5):
@@ -29,9 +28,9 @@ def get_frames(fname, num_frames=16, frame_freq=5):
 
 def read_data(fname):
     '''
-    Reads in pickled data.
+    Reads in saved data.
     '''
-    return pickle.load(open(fname, 'rb'))
+    return np.load(fname)
 
 
 if __name__ == '__main__':
@@ -42,15 +41,11 @@ if __name__ == '__main__':
     parser.add_argument('videos_path', type=str)
     parser.add_argument('output_path', type=str)
     args = parser.parse_args()
-    filenames = []
     data = []
     for fname in os.listdir(args.videos_path):
         if fname.split('.')[-1] == 'mp4':
-            filenames.append(fname)
             data.append(get_frames(os.path.join(
                 args.videos_path, fname)))
     data = np.array(data)
-    result = {'filenames': filenames, 'data': data}
 
-    with open(args.output_path, 'wb') as f:
-        pickle.dump(result, f)
+    np.save(args.output_path, data, allow_pickle=False)
