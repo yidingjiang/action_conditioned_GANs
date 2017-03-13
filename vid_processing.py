@@ -32,7 +32,7 @@ def read_data(fname):
 
 if __name__ == '__main__':
     '''
-    Usage from terminal: ./processing.py ./videos ./output_data
+    Usage from terminal: ./vid_processing.py ./videos ./output_data
     '''
     parser = argparse.ArgumentParser()
     parser.add_argument('videos_path', type=str)
