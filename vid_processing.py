@@ -15,12 +15,15 @@ def get_frames(fname, num_frames=10, frame_freq=10):
     cap = cv2.VideoCapture(fname)
     frames = []
     i = 0
-    while cap.isOpened() and i < num_frames and i % num_frames == 0:
-        ret, frame = cap.read()
-        frames.append(frame)
-        i += 1
+    j = 0
+    while cap.isOpened() and i < num_frames:
+        if j % num_frames == 0:
+            ret, frame = cap.read()
+            frames.append(frame)
+            i += 1
+        j += 1
     cap.release()
-    return np.array(frames)
+    return np.array(frames)[:,::10,::10,:]
 
 
 def read_data(fname):
@@ -32,17 +35,21 @@ def read_data(fname):
 
 if __name__ == '__main__':
     '''
-    Usage from terminal: ./vid_processing.py ./videos ./output_data
+    Usage from terminal: python ./vid_processing.py ./videos ./output_data
     '''
     parser = argparse.ArgumentParser()
     parser.add_argument('videos_path', type=str)
     parser.add_argument('output_path', type=str)
     args = parser.parse_args()
-    result = {}
+    filenames = []
+    data = []
     for fname in os.listdir(args.videos_path):
         if fname.split('.')[-1] == 'mp4':
-            result[fname] = get_frames(os.path.join(
-                args.videos_path, fname))
+            filenames.append(fname)
+            data.append(get_frames(os.path.join(
+                args.videos_path, fname)))
+    data = np.array(data)
+    result = {'filenames': filenames, 'data': data}
 
     with open(args.output_path, 'wb') as f:
         pickle.dump(result, f)
