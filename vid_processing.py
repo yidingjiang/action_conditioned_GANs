@@ -5,7 +5,7 @@ import os
 import pickle
 
 
-def get_frames(fname, num_frames=10, frame_freq=10):
+def get_frames(fname, num_frames=16, frame_freq=5):
     '''
     Returns num_frames frames, taking every frame_freq frame.
 
@@ -17,13 +17,14 @@ def get_frames(fname, num_frames=10, frame_freq=10):
     i = 0
     j = 0
     while cap.isOpened() and i < num_frames:
-        if j % num_frames == 0:
+        if j % frame_freq == 0:
             ret, frame = cap.read()
-            frames.append(frame)
+            resized_frame = cv2.resize(frame, (64, 64))
+            frames.append(resized_frame)
             i += 1
         j += 1
     cap.release()
-    return np.array(frames)[:,::10,::10,:]
+    return np.array(frames)
 
 
 def read_data(fname):
