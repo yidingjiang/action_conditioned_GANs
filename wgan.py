@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import pickle
+import argparse
 
 class WGAN:
 
@@ -235,7 +236,7 @@ class BatchNormLayer():
                                 )#restore=restore)
 
             ## 2.
-	    moving_mean_init = tf.constant_initializer(0.0)
+            moving_mean_init = tf.constant_initializer(0.0)
             moving_mean = tf.get_variable('moving_mean',
                                       params_shape,
                                       initializer=moving_mean_init,
@@ -281,6 +282,12 @@ class BatchNormLayer():
 
 
 if __name__ == "__main__":
+    '''
+    python wgan.py 10000
+    '''
+    parser = argparse.ArgumentParser()
+    parser.add_argument('num_epochs', type=int)
+    args = parser.parse_args()
     test = WGAN(None, None, None, None, frame_count=16)
-    test.train()
+    test.train(num_epochs=args.num_epochs)
 
