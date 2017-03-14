@@ -285,6 +285,8 @@ if __name__ == "__main__":
     '''
     python wgan.py 10000
     '''
+    if not os.path.exists('./output/'):
+        os.makedirs('output/')
     parser = argparse.ArgumentParser()
     parser.add_argument('num_epochs', type=int)
     args = parser.parse_args()
