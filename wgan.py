@@ -1,9 +1,7 @@
 import tensorflow as tf
-import tensorlayer as tl
 import numpy as np
 import os
 import pickle
-from vid_processing import *
 
 class WGAN:
 
@@ -64,14 +62,13 @@ class WGAN:
         print('Finish initialize all variables...')
         for i in range(epoch_num):
             for _ in range(D_per_G):
-                real = self.load_single_batch('test_data.p')
+                real = self.load_single_batch('test_data.npy')
                 first_frame = real[:,0,:,:,:]
                 _, D_loss_curr, _ = sess.run(
                         [self.D_solver, self.D_loss, self.clip_D],
                         feed_dict={self.true_frames: real, self.x: first_frame}
                         )
-            print('Finish first 5 discriminator trainings...')
-            sample_initial_frame = self.load_single_batch('test_data.p')
+            sample_initial_frame = self.load_single_batch('test_data.npy')[:,0,:,:,:]
             _, G_loss_curr = sess.run(
                         [self.G_solver, self.G_loss],
                         feed_dict={self.x: sample_initial_frame}
@@ -79,18 +76,17 @@ class WGAN:
 
             if i % 100 == 0:
                 print('Iter: {}; D loss: {:.4}; G_loss: {:.4}'
-                      .format(it, D_loss_curr, G_loss_curr))
+                      .format(i, D_loss_curr, G_loss_curr))
 
-                if i % 1000 == 0:
-                    d = self.load_single_batch('test_data.p')
-                    # initial_frame = #sample some initial frames
-                    samples = sess.run(G_sample, feed_dict={self.x: initial_frame})
-                    np.save('sample'+str(i), np.array(samples))
+                if i % 100 == 0:
+                    initial_frame = self.load_single_batch('test_data.npy')[:,0,:,:,:]
+                    samples = sess.run(self.G_sample, feed_dict={self.x: initial_frame})
+                    np.save('./output/sample'+str(i), np.array(samples))
 
 
     def load_single_batch(self, fname):
-        data = pickle.load(open(fname, 'rb'))['data']
-        return data
+        data = np.load("./data/" + fname)
+        return (data / 255.)
 
     def naive_generator(self, input_frame, reuse):
         """
@@ -122,7 +118,7 @@ class WGAN:
             network = tf.nn.relu(self.batchnorm(network, train, 'g_bn_7', group=self.G_weight))
             network = self.deconv3d(network, [4,4,4,64,128], [5,16,32,32,64], [1,2,2,2,1], 'g_dcv3_4', group=self.G_weight)
             network = tf.nn.relu(self.batchnorm(network, train, 'g_bn_8', group=self.G_weight))
-            depth_step_size = int(self.frame_count/32*2) #use a *full* convolution to adjust the output size
+            depth_step_size = int(float(self.frame_count)/32*2) #use a *full* convolution to adjust the output size
             network = self.deconv3d(network, [4,4,4,3,64], [5,self.frame_count,64,64,3], [1,depth_step_size,2,2,1], 'g_dcv3_5', group=self.G_weight)
         return network
 
@@ -239,10 +235,7 @@ class BatchNormLayer():
                                 )#restore=restore)
 
             ## 2.
-            if tf.__version__ > '0.12.1':
-                moving_mean_init = tf.zeros_initializer()
-            else:
-                moving_mean_init = tf.zeros_initializer
+	    moving_mean_init = tf.constant_initializer(0.0)
             moving_mean = tf.get_variable('moving_mean',
                                       params_shape,
                                       initializer=moving_mean_init,
