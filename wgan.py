@@ -34,8 +34,6 @@ class WGAN:
         trainable_vars = tf.trainable_variables()
         self.D_weight = [var for var in trainable_vars if 'd_' in var.name]
         self.G_weight = [var for var in trainable_vars if 'g_' in var.name]
-        # print([var.name for var in self.D_weight])
-        # print([var.name for var in self.G_weight])
         self.clip_D = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in self.D_weight]
 
         self.D_loss = tf.reduce_mean(self.D_real) - tf.reduce_mean(self.D_sample)
@@ -121,6 +119,7 @@ class WGAN:
             network = tf.nn.relu(self.batchnorm(network, train, 'g_bn_8', group=self.G_weight))
             depth_step_size = int(float(self.frame_count)/32*2) #use a *full* convolution to adjust the output size
             network = self.deconv3d(network, [4,4,4,3,64], [5,self.frame_count,64,64,3], [1,depth_step_size,2,2,1], 'g_dcv3_5', group=self.G_weight)
+            network = tf.nn.sigmoid(network)
         return network
 
 
