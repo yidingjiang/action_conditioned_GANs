@@ -3,6 +3,7 @@ import numpy as np
 import os
 import pickle
 import argparse
+print('Finished imports')
 
 class WGAN:
 
@@ -19,6 +20,7 @@ class WGAN:
         """
         Build the computational graph
         """
+        print('[*] starting graph construction')
         with tf.name_scope('data'):
             self.x = tf.placeholder('float32', (None, self.input_height, self.input_width, 3), name='input_frame')
             self.y = tf.placeholder('float32', (None, 1), name='label')
@@ -57,8 +59,8 @@ class WGAN:
                         generator is trained
         """
         sess = tf.Session()
-        sess.run(tf.initialize_all_variables())
-        print('Finish initialize all variables...')
+        sess.run(tf.global_variables_initializer())
+        print('[*] finish initialize all variables...')
         for i in range(epoch_num):
             for _ in range(D_per_G):
                 real = self.load_single_batch('test_data.npy')
@@ -119,7 +121,6 @@ class WGAN:
             network = tf.nn.relu(self.batchnorm(network, train, 'g_bn_8', group=self.G_weight))
             depth_step_size = int(float(self.frame_count)/32*2) #use a *full* convolution to adjust the output size
             network = self.deconv3d(network, [4,4,4,3,64], [5,self.frame_count,64,64,3], [1,depth_step_size,2,2,1], 'g_dcv3_5', group=self.G_weight)
-            network = tf.nn.sigmoid(network)
         return network
 
 
@@ -290,5 +291,5 @@ if __name__ == "__main__":
     parser.add_argument('num_epochs', type=int)
     args = parser.parse_args()
     test = WGAN(None, None, None, None, frame_count=16)
-    test.train(num_epochs=args.num_epochs)
+    test.train(epoch_num=args.num_epochs)
 
