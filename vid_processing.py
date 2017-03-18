@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import argparse
 import os
+import matplotlib.pyplot as plt
 
 
 def get_frames(fname, num_frames=16, frame_freq=5):
@@ -18,6 +19,8 @@ def get_frames(fname, num_frames=16, frame_freq=5):
     while cap.isOpened() and i < num_frames:
         if j % frame_freq == 0:
             ret, frame = cap.read()
+            if np.allclose(frame, 0.):
+                print("ERR")
             resized_frame = cv2.resize(frame, (64, 64))
             frames.append(resized_frame)
             i += 1
@@ -31,6 +34,18 @@ def read_data(fname):
     Reads in saved data.
     '''
     return np.load(fname)
+
+
+def save_samples(input_sample, generated_sample, sample_number):
+    for i in range(input_sample.shape[0]):
+        save_folder =  './output/sample{:d}/'.format(
+            sample_number)
+        if not os.path.exists(save_folder):
+            os.makedirs(save_folder)
+        save_path_input = save_folder + 'batch{:d}-0.png'.format(i)
+        plt.imsave(save_path_input, input_sample[i][:,:,::-1])
+        save_path_generated = save_folder + 'batch{:d}-1.png'.format(i)
+        plt.imsave(save_path_generated, generated_sample[i][:,:,::-1])
 
 
 if __name__ == '__main__':
