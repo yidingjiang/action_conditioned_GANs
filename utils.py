@@ -10,7 +10,7 @@ def wasserstein_discriminator_loss(d_real, d_sample):
 	return - (tf.reduce_mean(d_real) - tf.reduce_mean(d_sample))
 
 def wasserstein_generator_loss(d_sample):
-	return -tf.reduce_mean(d_sample)
+	return - tf.reduce_mean(d_sample)
 
 def gan_discriminator_loss(d_real_logit, d_sample_logit, real_prob=0.8):
 	D_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=d_real_logit, labels=real_prob*tf.ones_like(d_real_logit)))
@@ -27,7 +27,7 @@ def conv2d(incoming_layer, filter_shape,
         padding='SAME'):
     with tf.variable_scope(name) as vs:
         W = tf.get_variable(name='W', shape=filter_shape,
-            initializer=tf.truncated_normal_initializer(stddev=0.02))
+            initializer=tf.contrib.layers.xavier_initializer()
         b = tf.get_variable(name='b', shape=(filter_shape[-1]),
             initializer=tf.constant_initializer(value=0.0))
     return act(tf.nn.conv2d(incoming_layer, W, strides=strides, padding=padding) + b)
@@ -38,7 +38,7 @@ def deconv3d(incoming_layer, filter_shape, output_shape,
         padding='SAME'):
     with tf.variable_scope(name) as vs:
         W = tf.get_variable(name='W', shape=filter_shape,
-            initializer=tf.truncated_normal_initializer(stddev=0.02))
+            initializer=tf.contrib.layers.xavier_initializer()
         b = tf.get_variable(name='b', shape=(filter_shape[-2]),
             initializer=tf.constant_initializer(value=0.0))
     rtn = tf.nn.conv3d_transpose(incoming_layer, W, output_shape=output_shape, strides=strides, padding=padding)
@@ -51,7 +51,7 @@ def conv3d(incoming_layer, filter_shape,
         padding='SAME'):
     with tf.variable_scope(name) as vs:
         W = tf.get_variable(name='W', shape=filter_shape,
-            initializer=tf.truncated_normal_initializer(stddev=0.02))
+            initializer=tf.contrib.layers.xavier_initializer()
         b = tf.get_variable(name='b', shape=(filter_shape[-1]),
             initializer=tf.constant_initializer(value=0.0))
     return act(tf.nn.conv3d(incoming_layer, W, strides=strides, padding=padding, name=None) + b)

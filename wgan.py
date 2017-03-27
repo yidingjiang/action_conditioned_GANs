@@ -12,6 +12,7 @@ class WGAN:
         self.input_width, self.input_height = input_dim, input_dim
         self.frame_count = frame_count
         self.robot_state, self.robot_action = 5, 5
+        self.batch_size = 16
         self.G_weight = []
         self.D_weight = []
         self.build_graph(input_frame, label, real_frames, phase)
@@ -38,8 +39,12 @@ class WGAN:
         self.D_weight = [var for var in trainable_vars if 'd_' in var.name]
         self.G_weight = [var for var in trainable_vars if 'g_' in var.name]
         self.clip_D = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in self.D_weight]
+        self.slice_op = tf.slice(self.G_train, [0,0,0,0,0], [self.batch_size,1,64,64,3])
+        #add the l1 difference between frames
+        difference = self.slice_op - self.x
+        l1_difference_norm = tf.norm(difference, ord=1, axis=None, keep_dims=False, name='cropped_difference')
 
-        self.D_loss = wasserstein_discriminator_loss(self.D_real, self.D_sample)
+        self.D_loss = wasserstein_discriminator_loss(self.D_real, self.D_sample) + l1_difference_norm
         self.G_loss = wasserstein_generator_loss(self.D_sample)
         self.D_solver = (tf.train.RMSPropOptimizer(learning_rate=5e-5)
                     .minimize(self.D_loss, var_list=self.D_weight))
@@ -62,15 +67,17 @@ class WGAN:
         sess = tf.Session()
         sess.run(tf.global_variables_initializer())
         print('[*] finish initialize all variables...')
+        real_data = self.load_single_batch('real.npy')
+        num_real_data = real_data.shape[0]
         for i in range(epoch_num):
             for _ in range(D_per_G):
-                real = self.load_single_batch('test_data.npy')
+                real = real_data[np.random.randint(num_real_data, size=self.batch_size)]
                 first_frame = real[:,0,:,:,:]
                 _, D_loss_curr, _ = sess.run(
-                        [self.D_solver, self.D_loss, self.clip_D],
+                        [self.D_solver, self.D_loss, self.clip_D, self.slice_op],
                         feed_dict={self.true_frames: real, self.x: first_frame}
                         )
-            sample_initial_frame = self.load_single_batch('test_data.npy')[:,0,:,:,:]
+            sample_initial_frame = real_data[np.random.randint(num_real_data, size=self.batch_size)][:,0,:,:,:]
             _, G_loss_curr = sess.run(
                         [self.G_solver, self.G_loss],
                         feed_dict={self.x: sample_initial_frame}
@@ -80,10 +87,10 @@ class WGAN:
                 print('Iter: {}; D loss: {:.4}; G_loss: {:.4}'
                       .format(i, D_loss_curr, G_loss_curr))
 
-                if i % 100 == 0:
-                    initial_frame = self.load_single_batch('test_data.npy')[:,0,:,:,:]
-                    samples = sess.run(self.G_sample, feed_dict={self.x: initial_frame})
-                    np.save('./output/sample'+str(i), np.array(samples))
+            if i %  100 == 0:
+                initial_frame = real_data[np.random.randint(num_real_data, size=self.batch_size)][:,4,:,:,:]
+                samples = sess.run(self.G_sample, feed_dict={self.x: initial_frame})
+                np.save('./output/sample'+str(i), np.array(samples))
 
 
     def load_single_batch(self, fname):
