@@ -166,5 +166,5 @@ if __name__ == "__main__":
     parser.add_argument('num_epochs', type=int)
     args = parser.parse_args()
     test = WGAN(None, None, None, None, frame_count=16)
-    # test.train(epoch_num=args.num_epochs)
+    #test.train(epoch_num=args.num_epochs)
 
