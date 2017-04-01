@@ -43,8 +43,8 @@ class WGAN:
         #add the l1 difference between frames
         difference = self.slice_op - self.x
         l1_difference_norm = tf.norm(difference, ord=1, axis=None, keep_dims=False, name='cropped_difference')
-
-        self.D_loss = wasserstein_discriminator_loss(self.D_real, self.D_sample) + l1_difference_norm
+        #+ tf.sigmoid(l1_difference_norm)
+        self.D_loss = wasserstein_discriminator_loss(self.D_real, self.D_sample) + 0.01*tf.sigmoid(l1_difference_norm)
         self.G_loss = wasserstein_generator_loss(self.D_sample)
         self.D_solver = (tf.train.RMSPropOptimizer(learning_rate=5e-5)
                     .minimize(self.D_loss, var_list=self.D_weight))
@@ -73,7 +73,7 @@ class WGAN:
             for _ in range(D_per_G):
                 real = real_data[np.random.randint(num_real_data, size=self.batch_size)]
                 first_frame = real[:,0,:,:,:]
-                _, D_loss_curr, _ = sess.run(
+                _, D_loss_curr, _, _ = sess.run(
                         [self.D_solver, self.D_loss, self.clip_D, self.slice_op],
                         feed_dict={self.true_frames: real, self.x: first_frame}
                         )
@@ -118,18 +118,18 @@ class WGAN:
             network = tf.nn.relu(batchnorm(network, train, 'g_bn_3', group=self.G_weight))
             network = conv2d(network, [4,4,256,512], [1,2,2,1], 'g_cv2_4', group=self.G_weight) #4*4
             network = tf.nn.relu(batchnorm(network, train, 'g_bn_4', group=self.G_weight))
-            network = tf.reshape(network, (5,1,4,4,512))
-            network = deconv3d(network, [1,4,4,512,512], [5,2,4,4,512], [1,2,1,1,1], 'g_dcv3_1', group=self.G_weight)
+            network = tf.reshape(network, (self.batch_size,1,4,4,512))
+            network = deconv3d(network, [1,4,4,512,512], [self.batch_size, 2,4,4,512], [1,2,1,1,1], 'g_dcv3_1', group=self.G_weight)
             network = tf.nn.relu(batchnorm(network, train, 'g_bn_5', group=self.G_weight))
-            network = deconv3d(network, [2,4,4,256,512], [5,4,8,8,256], [1,2,2,2,1], 'g_dcv3_2', group=self.G_weight)
+            network = deconv3d(network, [2,4,4,256,512], [self.batch_size, 4,8,8,256], [1,2,2,2,1], 'g_dcv3_2', group=self.G_weight)
             network = tf.nn.relu(batchnorm(network, train, 'g_bn_6', group=self.G_weight))
-            network = deconv3d(network, [4,4,4,128,256], [5,8,16,16,128], [1,2,2,2,1], 'g_dcv3_3', group=self.G_weight)
+            network = deconv3d(network, [4,4,4,128,256], [self.batch_size,8,16,16,128], [1,2,2,2,1], 'g_dcv3_3', group=self.G_weight)
             network = tf.nn.relu(batchnorm(network, train, 'g_bn_7', group=self.G_weight))
-            network = deconv3d(network, [4,4,4,64,128], [5,16,32,32,64], [1,2,2,2,1], 'g_dcv3_4', group=self.G_weight)
+            network = deconv3d(network, [4,4,4,64,128], [self.batch_size,16,32,32,64], [1,2,2,2,1], 'g_dcv3_4', group=self.G_weight)
             network = tf.nn.relu(batchnorm(network, train, 'g_bn_8', group=self.G_weight))
             depth_step_size = int(float(self.frame_count)/32*2) #use a *full* convolution to adjust the output size
-            network = deconv3d(network, [4,4,4,3,64], [5,self.frame_count,64,64,3], [1,depth_step_size,2,2,1], 'g_dcv3_5', group=self.G_weight)
-        return network
+            network = deconv3d(network, [4,4,4,3,64], [self.batch_size,self.frame_count,64,64,3], [1,depth_step_size,2,2,1], 'g_dcv3_5', group=self.G_weight)
+        return tf.nn.sigmoid(network)
 
 
     def discriminator(self, frames, label, reuse=False):
@@ -166,5 +166,5 @@ if __name__ == "__main__":
     parser.add_argument('num_epochs', type=int)
     args = parser.parse_args()
     test = WGAN(None, None, None, None, frame_count=16)
-    #test.train(epoch_num=args.num_epochs)
+    test.train(epoch_num=args.num_epochs)
 
