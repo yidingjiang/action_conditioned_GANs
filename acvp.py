@@ -4,6 +4,7 @@ import numpy as np
 import h5py
 import matplotlib.pyplot as plt
 import os
+import argparse
 
 
 HISTORY_LENGTH=4
@@ -12,13 +13,15 @@ IMG_HEIGHT=160
 BATCH_SIZE = 8
 
 
-def save_samples(input_sample, generated_sample, sample_number):
+def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
     input_sample = (255. / 2) * (input_sample + 1.)
     input_sample = input_sample.astype(np.uint8)
     generated_sample = (255. / 2) * (generated_sample + 1.)
     generated_sample = generated_sample.astype(np.uint8)
+    gt = (255. / 2) * (gt + 1.)
+    gt = gt.astype(np.uint8)
     save_folder =  os.path.join(
-        'output',
+        output_path,
         'sample{:d}'.format(sample_number))
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
@@ -32,8 +35,10 @@ def save_samples(input_sample, generated_sample, sample_number):
             save_path_input = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
             frame = vid[:,:,3*j:3*(j+1)]
             plt.imsave(save_path_input, frame[:,:,::-1])
-        save_path_generated = os.path.join(vid_folder, 'frame{:d}.png'.format(num_frames))
+        save_path_generated = os.path.join(vid_folder, 'generated0.png')
         plt.imsave(save_path_generated, generated_sample[i][:,:,::-1])
+        save_path_gt = os.path.join(vid_folder, 'gt0.png')
+        plt.imsave(save_path_gt, gt[i][:,:,::-1])
 
 
 def build_generator(images):
@@ -190,9 +195,8 @@ def build_d_loss(d_out, label):
         label, d_out)
 
 
-def build_adv_loss(d_out, label):
-    return tf.losses.sigmoid_cross_entropy(
-        label, d_out)
+def build_psnr(true, pred):
+    return 10.0 * tf.log(1.0 / tf.losses.mean_squared_error(true, pred)) / tf.log(10.0)
 
 
 class Trainer():
@@ -205,26 +209,25 @@ class Trainer():
             tf.float32,
             [None, IMG_WIDTH, IMG_HEIGHT, 3],
             name='next_frame')
-        direct_label_ph = tf.placeholder(
-            tf.float32,
-            [None],
-            name='labels')
 
         g_out = build_generator(
             img_ph)
         d_out_gen = build_discriminator(
             tf.concat(values=[img_ph, g_out], axis=3),
-            reuse=True)
+            reuse=False)
         d_out_direct = build_discriminator(
             tf.concat(values=[img_ph, next_frame_ph], axis=3),
             reuse=True)
 
-        d_loss = build_d_loss(d_out_direct, direct_label_ph)
+        g_psnr = build_psnr(next_frame_ph, g_out)
         g_l2_loss = build_l2(g_out, next_frame_ph)
         g_gdl_loss = build_gdl(g_out, next_frame_ph, 1.0)
-        g_adv_loss = build_adv_loss(d_out_gen, tf.ones_like(d_out_gen))
+        g_adv_loss = build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
         g_nonadv_loss = g_l2_loss #+ g_gdl_loss
         g_loss = .05 * g_adv_loss + g_nonadv_loss
+        d_loss = build_d_loss(d_out_direct, tf.ones_like(d_out_direct)) + \
+                 build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
+
         g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g')
         d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd')
         g_opt_op = tf.train.AdamOptimizer(name='g_opt').minimize(g_loss, var_list=g_vars)
@@ -235,7 +238,6 @@ class Trainer():
         self.d_vars = d_vars
         self.img_ph = img_ph
         self.next_frame_ph = next_frame_ph
-        self.direct_label_ph = direct_label_ph
         self.d_out_direct = d_out_direct
         self.g_out = g_out
         self.g_loss = g_loss
@@ -244,6 +246,12 @@ class Trainer():
         self.g_pretrain_opt_op = g_pretrain_opt_op
         self.d_opt_op = d_opt_op
         self.sess = sess
+
+        self.d_loss_summary = tf.summary.scalar('discriminator_loss', d_loss)
+        self.g_loss_summary = tf.summary.scalar('g_loss', g_loss)
+        self.g_l2_loss_summary = tf.summary.scalar('g_l2_loss', g_l2_loss)
+        self.psnr_summary = tf.summary.scalar('g_psnr', g_psnr)
+        self.merged_summaries = tf.summary.merge_all()
 
 
     def pretrain_g(self, input_images, next_frame):
@@ -262,24 +270,35 @@ class Trainer():
         return g_res, gen_next_frames
 
 
-    def train_d(self, input_images, next_frame, labels):
+    def train_d(self, input_images, next_frame):
         _, d_res = self.sess.run([self.d_opt_op, self.d_loss], feed_dict={
             self.img_ph: input_images,
-            self.next_frame_ph: next_frame,
-            self.direct_label_ph: labels
+            self.next_frame_ph: next_frame
         })
         return d_res
 
 
-def train():
-    f = h5py.File('../data/pacman.hdf5', 'r')
+    def make_summary(self, input_images, next_frame):
+        return self.sess.run(self.merged_summaries, feed_dict={
+            self.img_ph: input_images,
+            self.next_frame_ph: next_frame
+        })
+
+
+def train(input_path, output_path, log_dir, model_dir):
+    f = h5py.File(input_path, 'r')
     pre_image_ph = tf.placeholder(tf.float32, [None, 160, 160, None])
     processed_image = pre_image_ph / (255. / 2) - 1.
     processed_image = tf.image.resize_images(processed_image, [IMG_WIDTH, IMG_HEIGHT])
+    writer = tf.summary.FileWriter(
+        logdir=log_dir, flush_secs=10
+    )
     with tf.Session() as sess:
         trainer = Trainer(sess)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
+        writer.add_graph(sess.graph)
+        saver = tf.train.Saver()
         for i in range(10000):
             vid_num = np.random.choice(8)
             vid_path = 'train/video{:d}'.format(vid_num)
@@ -293,22 +312,31 @@ def train():
             batch = (batch / (255. / 2)) - 1. # normalize and center
             input_batch = batch[:,:,:,:3*HISTORY_LENGTH]
             next_frame_batch = batch[:,:,:,3*HISTORY_LENGTH:]
-            print('Iteration {:d}'.format(i))
-            if i < 100:
+            if i < 0:
                 g_res = trainer.pretrain_g(input_batch, next_frame_batch)
-                print('Pretraining gen results:', g_res)
                 continue
 
             g_res, gen_next_frames = trainer.train_g(input_batch, next_frame_batch)
-            print('Generator results:', g_res)
-
-            d_res1 = trainer.train_d(input_batch, next_frame_batch, [1.0] * BATCH_SIZE)
-            d_res2 = trainer.train_d(input_batch, gen_next_frames, [0.0] * BATCH_SIZE)
-            print('Discriminator results:', d_res1, d_res2)
+            d_res = trainer.train_d(input_batch, next_frame_batch)
 
             if i % 100 == 0:
-                save_samples(input_batch, gen_next_frames, i)
+                print('Iteration {:d}'.format(i))
+                save_samples(output_path, input_batch, gen_next_frames, next_frame_batch, i)
+                summ = trainer.make_summary(input_batch, gen_next_frames)
+                writer.add_summary(summ, i)
+                saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
 
 
 if __name__ == '__main__':
-    train()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('input_path', type=str)
+    parser.add_argument('output_path', type=str)
+    parser.add_argument('--log_dir', type=str)
+    parser.add_argument('--model_dir', type=str, default='./model')
+    args = parser.parse_args()
+    output_path = os.path.join(args.output_path, 'output')
+    log_dir = os.path.join(args.output_path, 'logs')
+    model_dir = os.path.join(args.output_path, 'models')
+    os.makedirs(args.output_path)
+    os.makedirs(model_dir)
+    train(args.input_path, output_path, log_dir, model_dir)
