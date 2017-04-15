@@ -290,14 +290,12 @@ def train(input_path, output_path, log_dir, model_dir):
     pre_image_ph = tf.placeholder(tf.float32, [None, 160, 160, None])
     processed_image = pre_image_ph / (255. / 2) - 1.
     processed_image = tf.image.resize_images(processed_image, [IMG_WIDTH, IMG_HEIGHT])
-    writer = tf.summary.FileWriter(
-        logdir=log_dir, flush_secs=10
-    )
     with tf.Session() as sess:
         trainer = Trainer(sess)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
-        writer.add_graph(sess.graph)
+        writer = tf.summary.FileWriter(
+            log_dir, sess.graph)
         saver = tf.train.Saver()
         for i in range(10000):
             vid_num = np.random.choice(8)
@@ -324,6 +322,7 @@ def train(input_path, output_path, log_dir, model_dir):
                 save_samples(output_path, input_batch, gen_next_frames, next_frame_batch, i)
                 summ = trainer.make_summary(input_batch, gen_next_frames)
                 writer.add_summary(summ, i)
+                writer.flush()
                 saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
 
 
