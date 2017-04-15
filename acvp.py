@@ -222,11 +222,11 @@ class Trainer():
         g_psnr = build_psnr(next_frame_ph, g_out)
         g_l2_loss = build_l2(g_out, next_frame_ph)
         g_gdl_loss = build_gdl(g_out, next_frame_ph, 1.0)
-        g_adv_loss = build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
+        g_adv_loss = build_d_loss(d_out_gen, 0.8 * tf.ones_like(d_out_gen))
         g_nonadv_loss = g_l2_loss #+ g_gdl_loss
         g_loss = .05 * g_adv_loss + g_nonadv_loss
-        d_loss = build_d_loss(d_out_direct, tf.ones_like(d_out_direct)) + \
-                 build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
+        d_loss = build_d_loss(d_out_direct, 0.8 * tf.ones_like(d_out_direct)) + \
+                 build_d_loss(d_out_gen, 0.2 * tf.ones_like(d_out_gen))
 
         g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g')
         d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd')
