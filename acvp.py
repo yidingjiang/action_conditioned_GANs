@@ -13,6 +13,10 @@ BATCH_SIZE = 8
 
 
 def save_samples(input_sample, generated_sample, sample_number):
+    input_sample = (255. / 2) * (input_sample + 1.)
+    input_sample = input_sample.astype(np.uint8)
+    generated_sample = (255. / 2) * (generated_sample + 1.)
+    generated_sample = generated_sample.astype(np.uint8)
     save_folder =  os.path.join(
         'output',
         'sample{:d}'.format(sample_number))
