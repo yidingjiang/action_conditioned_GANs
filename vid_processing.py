@@ -2,50 +2,44 @@ import numpy as np
 import cv2
 import argparse
 import os
-import matplotlib.pyplot as plt
+import h5py
+import glob
 
 
-def get_frames(fname, num_frames=16, frame_freq=5):
-    '''
-    Returns num_frames frames, taking every frame_freq frame.
+IMG_WIDTH = 100
+IMG_HEIGHT = 100
+NUM_FRAMES = 51
 
-    Usage:
-    >>> frame_data = get_frames('./videos/example_video.mp4')
-    '''
+
+def get_frames(fname):
     cap = cv2.VideoCapture(fname)
     frames = []
-    i = 0
-    j = 0
-    while cap.isOpened() and i < num_frames:
-        if j % frame_freq == 0:
-            ret, frame = cap.read()
-            if np.allclose(frame, 0.):
-                print("ERR")
-            resized_frame = cv2.resize(frame, (64, 64))
-            frames.append(resized_frame)
-            i += 1
-        j += 1
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if frame is None:
+            break
+        frame = cv2.resize(frame, (IMG_WIDTH, IMG_HEIGHT))
+        frames.append(frame)
     cap.release()
-    return np.array(frames)
+    return np.concatenate(frames, axis=2)
 
 
-def read_data(fname):
-    '''
-    Reads in saved data.
-    '''
-    return np.load(fname)
-
-
-def save_samples(input_sample, generated_sample, sample_number):
-    for i in range(input_sample.shape[0]):
-        save_folder =  './output/sample{:d}/'.format(
-            sample_number)
-        if not os.path.exists(save_folder):
-            os.makedirs(save_folder)
-        save_path_input = save_folder + 'batch{:d}-0.png'.format(i)
-        plt.imsave(save_path_input, input_sample[i][:,:,::-1])
-        save_path_generated = save_folder + 'batch{:d}-1.png'.format(i)
-        plt.imsave(save_path_generated, generated_sample[i][:,:,::-1])
+def convert(input_folder, save_path):
+    video_fnames = glob.glob(os.path.join(input_folder, '*.mp4'))
+    num_videos = len(video_fnames)
+    f = h5py.File(save_path, 'w')
+    video_dset_shape = (num_videos, IMG_WIDTH, IMG_HEIGHT, 3 * NUM_FRAMES)
+    action_dset_shape = (num_videos, 50, 1, 2)
+    vid_dset = f.create_dataset('videos', video_dset_shape, dtype=np.uint8)
+    action_dset = f.create_dataset('actions', action_dset_shape, dtype=np.float32)
+    for i, fname in enumerate(video_fnames):
+        if i % 10 == 0:
+            print('Iterations {:d}'.format(i))
+        fname = os.path.join(fname)
+        actions_fname = os.path.join(input_folder, '{:d}actions.npy'.format(i))
+        vid_data = get_frames(fname)
+        vid_dset[i] = vid_data
+        action_dset[i] = np.load(actions_fname)
 
 
 if __name__ == '__main__':
@@ -56,11 +50,4 @@ if __name__ == '__main__':
     parser.add_argument('videos_path', type=str)
     parser.add_argument('output_path', type=str)
     args = parser.parse_args()
-    data = []
-    for fname in os.listdir(args.videos_path):
-        if fname.split('.')[-1] == 'mp4':
-            data.append(get_frames(os.path.join(
-                args.videos_path, fname)))
-    data = np.array(data)
-
-    np.save(args.output_path, data, allow_pickle=False)
+    convert(args.videos_path, args.output_path)
