@@ -2,7 +2,41 @@ import tensorflow as tf
 import numpy as np
 import os
 import pickle
+import matplotlib.pyplot as plt
 import argparse
+
+def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
+    input_sample = 255. * input_sample
+    input_sample = input_sample.astype(np.uint8)
+    generated_sample = 255. * generated_sample
+    generated_sample = generated_sample.astype(np.uint8)
+    gt = 255. * gt
+    gt = gt.astype(np.uint8)
+    save_folder =  os.path.join(
+        output_path,
+        'sample{:d}'.format(sample_number))
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+    for i in range(input_sample.shape[0]):
+        vid_folder = os.path.join(save_folder, 'vid{:d}'.format(i))
+        if not os.path.exists(vid_folder):
+            os.makedirs(vid_folder)
+        vid = input_sample[i]
+        num_frames = int(vid.shape[2] / 3)
+        for j in range(num_frames):
+            save_path_input = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
+            frame = vid[:,:,3*j:3*(j+1)]
+            plt.imsave(save_path_input, frame[:,:,::-1])
+        save_path_generated = os.path.join(vid_folder, 'generated0.png')
+        plt.imsave(save_path_generated, generated_sample[i][:,:,::-1])
+        save_path_gt = os.path.join(vid_folder, 'gt0.png')
+        plt.imsave(save_path_gt, gt[i][:,:,::-1])
+
+def lrelu(x, leak=0.2, name="lrelu"):
+     with tf.variable_scope(name):
+         f1 = 0.5 * (1 + leak)
+         f2 = 0.5 * (1 - leak)
+         return f1 * x + f2 * abs(x)
 
 #====================================================Loss====================================================
 
