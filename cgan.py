@@ -134,7 +134,6 @@ class CGAN:
                     gt = batch[:,5,:,:,:]
                     samples = sess.run(self.G_train, feed_dict={self.x: initial_frame})
                     save_samples(sample_dir, initial_frame, samples, gt, i)
-                    np.save('./output/sample'+str(i), np.array(samples))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
