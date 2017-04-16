@@ -96,13 +96,14 @@ class CGAN:
             return hidden5
 
     def train(self, input_path, output_path, epoch_num=50000, D_per_G=5, batch_size=64):
-        sample_dir = os.path.join(output_path, 'output)
-        model_dir = os.path.join(output_path,, 'models')
-        log_dir = os.path.join(output_path,, 'logs')
+        sample_dir = os.path.join(output_path, 'output')
+        model_dir = os.path.join(output_path, 'models')
+        log_dir = os.path.join(output_path, 'logs')
 
         real_data = np.load(os.path.join(input_path, 'real.npy'))/255.
         real_data_size = real_data.shape[0]
-        with tf.session() as sess:
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
             writer = tf.summary.FileWriter(
                 log_dir, sess.graph)
             saver = tf.train.Saver()
@@ -111,17 +112,22 @@ class CGAN:
                     real = real_data[np.random.randint(real_data_size, size=batch_size)]
                     first_frame_start = np.random.randint(7)
                     first_frame = real[:, first_frame_start,:,:,:]
-                    next_frame = real[:, first_frame_start:first_frame_start+2,:,:,:]
+                    next_frame = real[:, first_frame_start+1,:,:,:]
+                    combined_frame = np.concatenate((first_frame, next_frame), axis=3)
 
-                    _, D_loss_curr, _, _ = sess.run(
+                    _, D_loss_curr, _ = sess.run(
                             [self.D_solver, self.D_loss, self.clip_D],
-                            feed_dict={self.x: first_frame, self.true_frames: next_frame}
+                            feed_dict={self.x: first_frame, self.true_frames: combined_frame}
                             )
                 sample_frame_start = np.random.randint(7)
-                sample_initial_frame = real_data[np.random.randint(num_real_data, size=self.batch_size)][:,sample_frame_start,:,:,:]
+                sample_frame = real_data[np.random.randint(real_data_size, size=self.batch_size)]
+                sample_start = sample_frame[:,sample_frame_start,:,:,:]
+                sample_next = sample_frame[:,sample_frame_start+1,:,:,:]
                 _, G_loss_curr = sess.run(
                             [self.G_solver, self.G_loss],
-                            feed_dict={self.x: sample_initial_frame, self.true_frames: next_frame}
+                            feed_dict={self.x: sample_start, 
+                                self.true_frames: np.concatenate((sample_start, sample_next), axis=3)
+                                }
                             )
 
                 if i % 100 == 0:
@@ -129,7 +135,7 @@ class CGAN:
                           .format(i, D_loss_curr, G_loss_curr))
 
                 if i %  100 == 0:
-                    batch = real_data[np.random.randint(num_real_data, size=8)]
+                    batch = real_data[np.random.randint(real_data_size, size=8)]
                     initial_frame = batch[:,4,:,:,:]
                     gt = batch[:,5,:,:,:]
                     samples = sess.run(self.G_train, feed_dict={self.x: initial_frame})

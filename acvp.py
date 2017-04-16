@@ -13,6 +13,14 @@ IMG_HEIGHT=160
 BATCH_SIZE = 8
 
 
+def lrelu(x, leak=0.2):
+    '''
+    f1 = 0.5 * (1 + leak)
+    f2 = 0.5 * (1 - leak)
+    return f1 * x + f2 * tf.abs(x)
+    '''
+    return tf.maximum(x, leak * x)
+
 def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
     input_sample = (255. / 2) * (input_sample + 1.)
     input_sample = input_sample.astype(np.uint8)
@@ -46,7 +54,7 @@ def build_generator(images):
         out = slim.conv2d(
             images,
             64,
-            [8, 8],
+            [5, 5],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv1',
@@ -54,7 +62,7 @@ def build_generator(images):
         out = slim.conv2d(
             out,
             128,
-            [6, 6],
+            [3, 3],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv2',
@@ -62,7 +70,7 @@ def build_generator(images):
         out = slim.conv2d(
             out,
             128,
-            [6, 6],
+            [3, 3],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv3',
@@ -70,7 +78,7 @@ def build_generator(images):
         out = slim.conv2d(
             out,
             128,
-            [4, 4],
+            [3, 3],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv4',
@@ -78,7 +86,7 @@ def build_generator(images):
         out = slim.conv2d_transpose(
             out,
             128,
-            [4, 4],
+            [3, 3],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv1',
@@ -86,7 +94,7 @@ def build_generator(images):
         out = slim.conv2d_transpose(
             out,
             128,
-            [6, 6],
+            [3, 3],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv2',
@@ -94,18 +102,32 @@ def build_generator(images):
         out = slim.conv2d_transpose(
             out,
             128,
-            [6, 6],
+            [3, 3],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv3',
             padding='SAME')
         out = slim.conv2d_transpose(
             out,
-            3,
-            [8, 8],
-            activation_fn=tf.tanh,
+            128,
+            [5, 5],
+            activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv4',
+            padding='SAME')
+        out = slim.conv2d(
+            tf.concat(values=[out, images], axis=3),
+            64,
+            [3, 3],
+            activation_fn=tf.nn.relu,
+            scope='conv5',
+            padding='SAME')
+        out = slim.conv2d(
+            out,
+            3,
+            [3, 3],
+            activation_fn=tf.tanh,
+            scope='conv6',
             padding='SAME')
     return out
 
@@ -116,41 +138,46 @@ def build_discriminator(inputs,
         out = slim.conv2d(
             inputs,
             64,
-            [3, 3],
-            activation_fn=tf.nn.relu,
+            [5, 5],
+            activation_fn=lrelu,
             stride=2,
             scope='conv1',
+            weights_regularizer=slim.l2_regularizer(0.0005),
             reuse=reuse)
         out = slim.conv2d(
             out,
             128,
             [3, 3],
-            activation_fn=tf.nn.relu,
+            activation_fn=lrelu,
             stride=2,
             scope='conv2',
+            weights_regularizer=slim.l2_regularizer(0.0005),
             reuse=reuse)
         out = slim.conv2d(
             out,
             128,
             [3, 3],
-            activation_fn=tf.nn.relu,
+            activation_fn=lrelu,
             stride=2,
             scope='conv3',
+            weights_regularizer=slim.l2_regularizer(0.0005),
             reuse=reuse)
         out = slim.conv2d(
             out,
             128,
             [3, 3],
-            activation_fn=tf.nn.relu,
+            activation_fn=lrelu,
             stride=2,
             scope='conv4',
+            weights_regularizer=slim.l2_regularizer(0.0005),
             reuse=reuse)
         out = slim.flatten(out)
         out = slim.fully_connected(
             out,
             512,
-            activation_fn=tf.nn.relu,
+            activation_fn=lrelu,
             scope='fc1',
+            weights_regularizer=slim.l2_regularizer(0.0005),
             reuse=reuse)
         out = slim.fully_connected(
             out,
@@ -222,17 +249,17 @@ class Trainer():
         g_psnr = build_psnr(next_frame_ph, g_out)
         g_l2_loss = build_l2(g_out, next_frame_ph)
         g_gdl_loss = build_gdl(g_out, next_frame_ph, 1.0)
-        g_adv_loss = build_d_loss(d_out_gen, 0.8 * tf.ones_like(d_out_gen))
-        g_nonadv_loss = g_l2_loss #+ g_gdl_loss
-        g_loss = .05 * g_adv_loss + g_nonadv_loss
-        d_loss = build_d_loss(d_out_direct, 0.8 * tf.ones_like(d_out_direct)) + \
-                 build_d_loss(d_out_gen, 0.2 * tf.ones_like(d_out_gen))
+        g_adv_loss = build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
+        g_loss = .05 * g_adv_loss + g_l2_loss
+        d_direct_loss = build_d_loss(d_out_direct, 0.9 * tf.ones_like(d_out_direct))
+        d_gen_loss = build_d_loss(d_out_gen, 0.0 * tf.ones_like(d_out_gen))
+        d_loss = d_direct_loss + d_gen_loss
 
         g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g')
         d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd')
         g_opt_op = tf.train.AdamOptimizer(name='g_opt').minimize(g_loss, var_list=g_vars)
         g_pretrain_opt_op = tf.train.AdamOptimizer(
-            name='g_pretrain_opt').minimize(g_nonadv_loss, var_list=g_vars)
+            name='g_pretrain_opt').minimize(g_l2_loss, var_list=g_vars)
         d_opt_op = tf.train.AdamOptimizer(name='d_opt').minimize(d_loss, var_list=d_vars)
         self.g_vars = g_vars
         self.d_vars = d_vars
@@ -248,8 +275,11 @@ class Trainer():
         self.sess = sess
 
         self.d_loss_summary = tf.summary.scalar('discriminator_loss', d_loss)
+        self.d_direct_loss_summary = tf.summary.scalar('discriminator_direct_loss', d_direct_loss)
+        self.d_gen_loss_summary = tf.summary.scalar('discriminator_gen_loss', d_gen_loss)
         self.g_loss_summary = tf.summary.scalar('g_loss', g_loss)
         self.g_l2_loss_summary = tf.summary.scalar('g_l2_loss', g_l2_loss)
+        self.g_adv_loss_summary = tf.summary.scalar('g_adv_loss', g_adv_loss)
         self.psnr_summary = tf.summary.scalar('g_psnr', g_psnr)
         self.merged_summaries = tf.summary.merge_all()
 
@@ -263,26 +293,24 @@ class Trainer():
 
 
     def train_g(self, input_images, next_frame):
-        _, g_res, gen_next_frames = self.sess.run([self.g_opt_op, self.g_loss, self.g_out], feed_dict={
+        _, gen_next_frames = self.sess.run([self.g_opt_op, self.g_out], feed_dict={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame
         })
-        return g_res, gen_next_frames
+        return gen_next_frames
 
 
-    def train_d(self, input_images, next_frame):
-        _, d_res = self.sess.run([self.d_opt_op, self.d_loss], feed_dict={
+    def train_d(self, input_images, next_frame, summarize=False):
+        fd={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame
-        })
-        return d_res
-
-
-    def make_summary(self, input_images, next_frame):
-        return self.sess.run(self.merged_summaries, feed_dict={
-            self.img_ph: input_images,
-            self.next_frame_ph: next_frame
-        })
+        }
+        if summarize:
+            _, summ = self.sess.run([self.d_opt_op, self.merged_summaries], feed_dict=fd)
+            return summ
+        else:
+            self.sess.run([self.d_opt_op], feed_dict=fd)
+            return None
 
 
 def train(input_path, output_path, log_dir, model_dir):
@@ -297,7 +325,7 @@ def train(input_path, output_path, log_dir, model_dir):
         writer = tf.summary.FileWriter(
             log_dir, sess.graph)
         saver = tf.train.Saver()
-        for i in range(10000):
+        for i in range(60000):
             vid_num = np.random.choice(8)
             vid_path = 'train/video{:d}'.format(vid_num)
             batch = []
@@ -310,20 +338,16 @@ def train(input_path, output_path, log_dir, model_dir):
             batch = (batch / (255. / 2)) - 1. # normalize and center
             input_batch = batch[:,:,:,:3*HISTORY_LENGTH]
             next_frame_batch = batch[:,:,:,3*HISTORY_LENGTH:]
-            if i < 0:
-                g_res = trainer.pretrain_g(input_batch, next_frame_batch)
-                continue
 
-            g_res, gen_next_frames = trainer.train_g(input_batch, next_frame_batch)
-            d_res = trainer.train_d(input_batch, next_frame_batch)
-
+            gen_next_frames = trainer.train_g(input_batch, next_frame_batch)
+            make_summ = (i % 100 == 0)
+            summ = trainer.train_d(input_batch, next_frame_batch, summarize=make_summ)
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
                 save_samples(output_path, input_batch, gen_next_frames, next_frame_batch, i)
-                summ = trainer.make_summary(input_batch, gen_next_frames)
+                saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
                 writer.add_summary(summ, i)
                 writer.flush()
-                saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
 
 
 if __name__ == '__main__':
