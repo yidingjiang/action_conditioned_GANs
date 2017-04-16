@@ -28,8 +28,9 @@ class CGAN:
         with tf.name_scope('data'):
             self.x = tf.placeholder('float32', (None, self.input_height, self.input_width, 3), name='input_frame')
             self.true_frames = tf.placeholder('float32', (None, self.input_height, self.input_width, 3 * self.frame_count), name='true_frames')
+            self.phase = tf.placeholder(tf.bool)
 
-        self.G_train = self.naive_generator(self.x)
+        self.G_train = self.naive_generator(self.x, is_train=self.phase)
         self.D_real = self.discriminator2d(self.true_frames, reuse=False)
         concat_frames = tf.concat([self.x, self.G_train], 3)
         self.D_sample = self.discriminator2d(concat_frames, reuse=True)
@@ -43,39 +44,39 @@ class CGAN:
         l2_difference_norm = tf.norm(difference, ord=2, axis=None, keep_dims=False, name='l2_difference')
 
         self.D_loss = wasserstein_discriminator_loss(self.D_real, self.D_sample)
-        self.G_loss = wasserstein_generator_loss(self.D_sample) + 0.5 * l2_difference_norm
+        self.G_loss = wasserstein_generator_loss(self.D_sample) + 0.1 * l2_difference_norm
         self.D_solver = (tf.train.RMSPropOptimizer(learning_rate=5e-5)
                     .minimize(self.D_loss, var_list=self.D_weight))
         self.G_solver = (tf.train.RMSPropOptimizer(learning_rate=5e-5)
                     .minimize(self.G_loss, var_list=self.G_weight))
         print("[*] all solvers compiled")
 
-    def naive_generator(self, input_frame):
+    def naive_generator(self, input_frame, is_train):
         with tf.variable_scope('generator') as scope:
             bn = tf.identity
             hidden1 = slim.layers.conv2d(
-                input_frame, 64, [5, 5], stride=2, scope='g_cv2_1', normalizer_fn=slim.batch_norm)
+                input_frame, 64, [5, 5], stride=2, scope='g_cv2_1', normalizer_fn=slim.batch_norm, normalizer_params={'is_training':is_train})
             hidden2 = slim.layers.conv2d(
-                hidden1, 128, [4, 4], stride=2, scope='g_cv2_2', normalizer_fn=slim.batch_norm)
+                hidden1, 128, [4, 4], stride=2, scope='g_cv2_2', normalizer_fn=slim.batch_norm, normalizer_params={'is_training':is_train})
             hidden3 = slim.layers.conv2d(
-                hidden2, 256, [4, 4], stride=2, scope='g_cv3_3', normalizer_fn=slim.batch_norm)
+                hidden2, 256, [4, 4], stride=2, scope='g_cv3_3', normalizer_fn=slim.batch_norm, normalizer_params={'is_training':is_train})
             hidden4 = slim.layers.conv2d(
-                hidden3, 512, [4, 4], stride=2, scope='g_cv2_4', normalizer_fn=slim.batch_norm)
+                hidden3, 512, [4, 4], stride=2, scope='g_cv2_4', normalizer_fn=slim.batch_norm, normalizer_params={'is_training':is_train})
             #condition here?
             hidden5 = slim.layers.conv2d_transpose(
-                hidden4, 256, kernel_size=[4,4], stride=2, scope='g_cvt2_1', normalizer_fn=slim.batch_norm)
+                hidden4, 256, kernel_size=[4,4], stride=2, scope='g_cvt2_1', normalizer_fn=slim.batch_norm, normalizer_params={'is_training':is_train})
             # print(hidden5.get_shape())
             hidden6 = slim.layers.conv2d_transpose(
-                hidden5, 128, kernel_size=[4,4], stride=2, scope='g_cvt2_2', normalizer_fn=slim.batch_norm)
+                hidden5, 128, kernel_size=[4,4], stride=2, scope='g_cvt2_2', normalizer_fn=slim.batch_norm, normalizer_params={'is_training':is_train})
             # print(hidden6.get_shape())
             hidden7 = slim.layers.conv2d_transpose(
-                hidden6, 64, kernel_size=[4,4], stride=2, scope='g_cvt2_3', normalizer_fn=slim.batch_norm)
+                hidden6, 64, kernel_size=[4,4], stride=2, scope='g_cvt2_3', normalizer_fn=slim.batch_norm, normalizer_params={'is_training':is_train})
             # print(hidden7.get_shape())
             hidden8 = slim.layers.conv2d_transpose(
                 hidden7, 3, kernel_size=[4,4], stride=2, scope='g_cvt2_4', activation_fn=tf.nn.sigmoid)
             return hidden8
 
-    def discriminator2d(self, frames, reuse):
+    def discriminator2d(self, frames, reuse, is_train=True):
         with tf.variable_scope('discriminator') as scope:
             is_train = True
             bn = tf.identity
@@ -117,7 +118,10 @@ class CGAN:
 
                     _, D_loss_curr, _ = sess.run(
                             [self.D_solver, self.D_loss, self.clip_D],
-                            feed_dict={self.x: first_frame, self.true_frames: combined_frame}
+                            feed_dict={self.x: first_frame, 
+                                self.true_frames: combined_frame, 
+                                self.phase:True
+                                }
                             )
                 sample_frame_start = np.random.randint(7)
                 sample_frame = real_data[np.random.randint(real_data_size, size=self.batch_size)]
@@ -126,7 +130,8 @@ class CGAN:
                 _, G_loss_curr = sess.run(
                             [self.G_solver, self.G_loss],
                             feed_dict={self.x: sample_start, 
-                                self.true_frames: np.concatenate((sample_start, sample_next), axis=3)
+                                self.true_frames: np.concatenate((sample_start, sample_next), axis=3),
+                                self.phase:True
                                 }
                             )
 
@@ -138,7 +143,12 @@ class CGAN:
                     batch = real_data[np.random.randint(real_data_size, size=8)]
                     initial_frame = batch[:,4,:,:,:]
                     gt = batch[:,5,:,:,:]
-                    samples = sess.run(self.G_train, feed_dict={self.x: initial_frame})
+                    samples = sess.run(
+                        self.G_train, 
+                        feed_dict={self.x: initial_frame, 
+                            self.phase:True
+                            }
+                        )
                     save_samples(sample_dir, initial_frame, samples, gt, i)
 
 if __name__ == '__main__':

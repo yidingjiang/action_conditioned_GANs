@@ -41,10 +41,10 @@ def lrelu(x, leak=0.2, name="lrelu"):
 #====================================================Loss====================================================
 
 def wasserstein_discriminator_loss(d_real, d_sample):
-	return - (tf.reduce_mean(d_real) - tf.reduce_mean(d_sample))
+	return (tf.reduce_mean(d_real) - tf.reduce_mean(d_sample))
 
 def wasserstein_generator_loss(d_sample):
-	return - tf.reduce_mean(d_sample)
+	return  tf.reduce_mean(d_sample)
 
 def gan_discriminator_loss(d_real_logit, d_sample_logit, real_prob=0.8):
 	D_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=d_real_logit, labels=real_prob*tf.ones_like(d_real_logit)))
