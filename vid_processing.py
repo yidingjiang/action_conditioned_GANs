@@ -6,8 +6,8 @@ import h5py
 import glob
 
 
-IMG_WIDTH = 100
-IMG_HEIGHT = 100
+IMG_WIDTH = 160
+IMG_HEIGHT = 160
 NUM_FRAMES = 51
 
 

@@ -5,20 +5,17 @@ import h5py
 import matplotlib.pyplot as plt
 import os
 import argparse
+import random
 
 
-HISTORY_LENGTH=4
-IMG_WIDTH=160
-IMG_HEIGHT=160
+RECURSION_LENGTH = 1
+HISTORY_LENGTH = 1
+IMG_WIDTH = 160
+IMG_HEIGHT = 160
 BATCH_SIZE = 8
 
 
 def lrelu(x, leak=0.2):
-    '''
-    f1 = 0.5 * (1 + leak)
-    f2 = 0.5 * (1 - leak)
-    return f1 * x + f2 * tf.abs(x)
-    '''
     return tf.maximum(x, leak * x)
 
 def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
@@ -38,19 +35,24 @@ def save_samples(output_path, input_sample, generated_sample, gt, sample_number)
         if not os.path.exists(vid_folder):
             os.makedirs(vid_folder)
         vid = input_sample[i]
-        num_frames = int(vid.shape[2] / 3)
-        for j in range(num_frames):
-            save_path_input = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
+        for j in range(int(vid.shape[2] / 3)):
+            save_path = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
             frame = vid[:,:,3*j:3*(j+1)]
-            plt.imsave(save_path_input, frame[:,:,::-1])
-        save_path_generated = os.path.join(vid_folder, 'generated0.png')
-        plt.imsave(save_path_generated, generated_sample[i][:,:,::-1])
-        save_path_gt = os.path.join(vid_folder, 'gt0.png')
-        plt.imsave(save_path_gt, gt[i][:,:,::-1])
+            plt.imsave(save_path, frame[:,:,::-1])
+        vid = generated_sample[i]
+        for j in range(int(vid.shape[2] / 3)):
+            save_path = os.path.join(vid_folder, 'generated{:d}.png'.format(j))
+            frame = vid[:,:,3*j:3*(j+1)]
+            plt.imsave(save_path, frame[:,:,::-1])
+        vid = gt[i]
+        for j in range(int(vid.shape[2] / 3)):
+            save_path = os.path.join(vid_folder, 'ground_truth{:d}.png'.format(j))
+            frame = vid[:,:,3*j:3*(j+1)]
+            plt.imsave(save_path, frame[:,:,::-1])
 
 
-def build_generator(images):
-    with tf.variable_scope('g'):
+def build_generator(images, reuse=False):
+    with tf.variable_scope('g', reuse=reuse):
         out = slim.conv2d(
             images,
             64,
@@ -58,7 +60,8 @@ def build_generator(images):
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv1',
-            padding='SAME')
+            padding='SAME',
+            reuse=reuse)
         out = slim.conv2d(
             out,
             128,
@@ -66,7 +69,8 @@ def build_generator(images):
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv2',
-            padding='SAME')
+            padding='SAME',
+            reuse=reuse)
         out = slim.conv2d(
             out,
             128,
@@ -74,7 +78,8 @@ def build_generator(images):
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv3',
-            padding='SAME')
+            padding='SAME',
+            reuse=reuse)
         out = slim.conv2d(
             out,
             128,
@@ -82,7 +87,8 @@ def build_generator(images):
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv4',
-            padding='SAME')
+            padding='SAME',
+            reuse=reuse)
         out = slim.conv2d_transpose(
             out,
             128,
@@ -90,7 +96,8 @@ def build_generator(images):
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv1',
-            padding='SAME')
+            padding='SAME',
+            reuse=reuse)
         out = slim.conv2d_transpose(
             out,
             128,
@@ -98,7 +105,8 @@ def build_generator(images):
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv2',
-            padding='SAME')
+            padding='SAME',
+            reuse=reuse)
         out = slim.conv2d_transpose(
             out,
             128,
@@ -106,7 +114,8 @@ def build_generator(images):
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv3',
-            padding='SAME')
+            padding='SAME',
+            reuse=reuse)
         out = slim.conv2d_transpose(
             out,
             128,
@@ -114,21 +123,24 @@ def build_generator(images):
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv4',
-            padding='SAME')
+            padding='SAME',
+            reuse=reuse)
         out = slim.conv2d(
             tf.concat(values=[out, images], axis=3),
             64,
             [3, 3],
             activation_fn=tf.nn.relu,
             scope='conv5',
-            padding='SAME')
+            padding='SAME',
+            reuse=reuse)
         out = slim.conv2d(
             out,
             3,
             [3, 3],
             activation_fn=tf.tanh,
             scope='conv6',
-            padding='SAME')
+            padding='SAME',
+            reuse=reuse)
     return out
 
 
@@ -230,15 +242,14 @@ class Trainer():
     def __init__(self, sess):
         img_ph = tf.placeholder(
             tf.float32,
-            [None, IMG_WIDTH, IMG_HEIGHT, 3 * (HISTORY_LENGTH)],
+            [None, IMG_WIDTH, IMG_HEIGHT, 3 * HISTORY_LENGTH],
             name='current_frame')
         next_frame_ph = tf.placeholder(
             tf.float32,
-            [None, IMG_WIDTH, IMG_HEIGHT, 3],
+            [None, IMG_WIDTH, IMG_HEIGHT, 3 * RECURSION_LENGTH],
             name='next_frame')
 
-        g_out = build_generator(
-            img_ph)
+        g_out = build_generator(img_ph)
         d_out_gen = build_discriminator(
             tf.concat(values=[img_ph, g_out], axis=3),
             reuse=False)
@@ -248,9 +259,8 @@ class Trainer():
 
         g_psnr = build_psnr(next_frame_ph, g_out)
         g_l2_loss = build_l2(g_out, next_frame_ph)
-        g_gdl_loss = build_gdl(g_out, next_frame_ph, 1.0)
         g_adv_loss = build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
-        g_loss = .05 * g_adv_loss + g_l2_loss
+        g_loss = g_l2_loss + .05 * g_adv_loss
         d_direct_loss = build_d_loss(d_out_direct, 0.9 * tf.ones_like(d_out_direct))
         d_gen_loss = build_d_loss(d_out_gen, 0.0 * tf.ones_like(d_out_gen))
         d_loss = d_direct_loss + d_gen_loss
@@ -315,9 +325,7 @@ class Trainer():
 
 def train(input_path, output_path, log_dir, model_dir):
     f = h5py.File(input_path, 'r')
-    pre_image_ph = tf.placeholder(tf.float32, [None, 160, 160, None])
-    processed_image = pre_image_ph / (255. / 2) - 1.
-    processed_image = tf.image.resize_images(processed_image, [IMG_WIDTH, IMG_HEIGHT])
+    vid_data = f['videos']
     with tf.Session() as sess:
         trainer = Trainer(sess)
         init_op = tf.global_variables_initializer()
@@ -326,15 +334,9 @@ def train(input_path, output_path, log_dir, model_dir):
             log_dir, sess.graph)
         saver = tf.train.Saver()
         for i in range(60000):
-            vid_num = np.random.choice(8)
-            vid_path = 'train/video{:d}'.format(vid_num)
-            batch = []
-            for _ in range(8):
-                start_idx = np.random.choice(1000)
-                clip = f[vid_path][:,:,3*start_idx:3*(start_idx+HISTORY_LENGTH + 1)]
-                batch.append(clip)
-            batch = np.array(batch)
-            batch = batch[:,25:185,:,:] # crop
+            vid_indices = sorted(random.sample(range(500), BATCH_SIZE))
+            start_idx = np.random.choice(40)
+            batch = vid_data[vid_indices][:,:,:,:3*(HISTORY_LENGTH + RECURSION_LENGTH)]
             batch = (batch / (255. / 2)) - 1. # normalize and center
             input_batch = batch[:,:,:,:3*HISTORY_LENGTH]
             next_frame_batch = batch[:,:,:,3*HISTORY_LENGTH:]
@@ -354,12 +356,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('input_path', type=str)
     parser.add_argument('output_path', type=str)
-    parser.add_argument('--log_dir', type=str)
-    parser.add_argument('--model_dir', type=str, default='./model')
     args = parser.parse_args()
     output_path = os.path.join(args.output_path, 'output')
-    log_dir = os.path.join(args.output_path, 'logs')
     model_dir = os.path.join(args.output_path, 'models')
+    log_dir = os.path.join(args.output_path, 'logs')
     os.makedirs(args.output_path)
     os.makedirs(model_dir)
     train(args.input_path, output_path, log_dir, model_dir)
