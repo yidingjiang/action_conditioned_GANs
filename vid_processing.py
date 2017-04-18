@@ -6,20 +6,23 @@ import h5py
 import glob
 
 
-IMG_WIDTH = 160
-IMG_HEIGHT = 160
-NUM_FRAMES = 51
+IMG_WIDTH = 64
+IMG_HEIGHT = 64
+NUM_FRAMES = 11
 
 
 def get_frames(fname):
     cap = cv2.VideoCapture(fname)
     frames = []
+    i = 0
     while cap.isOpened():
         ret, frame = cap.read()
         if frame is None:
             break
-        frame = cv2.resize(frame, (IMG_WIDTH, IMG_HEIGHT))
-        frames.append(frame)
+        if i % 5 == 0:
+            frame = cv2.resize(frame, (IMG_WIDTH, IMG_HEIGHT))
+            frames.append(frame)
+        i += 1
     cap.release()
     return np.concatenate(frames, axis=2)
 
