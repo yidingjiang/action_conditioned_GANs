@@ -261,19 +261,28 @@ class Trainer():
             tf.concat(values=[img_ph, next_frame_ph], axis=3),
             reshaped_actions_d,
             reuse=True)
+        print(d_out_gen.get_shape())
+        print(g_out.get_shape())
 
         g_psnr = build_psnr(next_frame_ph, g_out)
         g_l2_loss = build_l2(g_out, next_frame_ph)
-        g_adv_loss = build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
-        g_loss = 0.1*g_l2_loss + g_adv_loss
-        d_direct_loss = build_d_loss(d_out_direct, 0.9 * tf.ones_like(d_out_direct))
-        d_gen_loss = build_d_loss(d_out_gen, 0.0 * tf.ones_like(d_out_gen))
-        d_loss = d_direct_loss + d_gen_loss
+        # g_adv_loss = build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
+        g_adv_loss = tf.reduce_mean(d_out_gen)
+        g_loss = 0.3*g_l2_loss + g_adv_loss
+        # d_direct_loss = build_d_loss(d_out_direct, 0.9 * tf.ones_like(d_out_direct))
+        # d_gen_loss = build_d_loss(d_out_gen, 0.0 * tf.ones_like(d_out_gen))
+        # d_loss = d_direct_loss + d_gen_loss
+        d_direct_loss = tf.reduce_mean(d_out_direct)
+        d_gen_loss = -tf.reduce_mean(d_out_gen)
+        d_loss =  d_direct_loss + d_gen_loss
 
         g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g')
         d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd')
         clip_d = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in d_vars]
-        g_opt_op = tf.train.AdamOptimizer(name='g_opt').minimize(g_loss, var_list=g_vars)
+        # g_opt_op = tf.train.AdamOptimizer(name='g_opt').minimize(g_loss, var_list=g_vars)
+        g_opt_op = tf.train.RMSPropOptimizer(
+            5e-5,
+            name='g_opt').minimize(g_loss, var_list=d_vars)
         g_pretrain_opt_op = tf.train.RMSPropOptimizer(
             5e-5,
             name='g_pretrain_opt').minimize(g_l2_loss, var_list=g_vars)
@@ -359,15 +368,15 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir):
             os.path.join(log_dir, 'test'))
         saver = tf.train.Saver()
         for i in range(60000):
-            input_batch, next_frame_batch, action_batch = get_batch(
-                vid_data,
-                action_data,
-                BATCH_SIZE, 0, 500,
-                HISTORY_LENGTH)
-
+            for j in range(5):
+                input_batch, next_frame_batch, action_batch = get_batch(
+                    vid_data,
+                    action_data,
+                    BATCH_SIZE, 0, 500,
+                    HISTORY_LENGTH)
+                make_summ = (i % 100 == 0) and (j==4)
+                summ = trainer.train_d(input_batch, next_frame_batch, action_batch, summarize=make_summ)
             gen_next_frames = trainer.train_g(input_batch, next_frame_batch, action_batch)
-            make_summ = (i % 100 == 0)
-            summ = trainer.train_d(input_batch, next_frame_batch, action_batch, summarize=make_summ)
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
                 save_samples(output_path, input_batch, gen_next_frames, next_frame_batch, i)
