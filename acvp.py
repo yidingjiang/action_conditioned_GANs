@@ -72,6 +72,7 @@ def build_generator(images, actions, reuse=False):
             stride=2,
             scope='conv1',
             padding='SAME',
+            normalizer_fn=slim.batch_norm,
             reuse=reuse)
         out = slim.conv2d(
             out,
@@ -81,43 +82,48 @@ def build_generator(images, actions, reuse=False):
             stride=2,
             scope='conv2',
             padding='SAME',
+            normalizer_fn=slim.batch_norm,
             reuse=reuse)
         out = slim.conv2d(
             out,
-            128,
+            256,
             [3, 3],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv3',
             padding='SAME',
+            normalizer_fn=slim.batch_norm,
             reuse=reuse)
         out = slim.conv2d(
             out,
-            128,
+            512,
             [3, 3],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv4',
             padding='SAME',
+            normalizer_fn=slim.batch_norm,
             reuse=reuse)
         out = tf.concat(values=[out, actions], axis=3)
         out = slim.conv2d_transpose(
             out,
-            128,
+            512,
             [3, 3],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv1',
             padding='SAME',
+            normalizer_fn=slim.batch_norm,
             reuse=reuse)
         out = slim.conv2d_transpose(
             out,
-            128,
+            256,
             [3, 3],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv2',
             padding='SAME',
+            normalizer_fn=slim.batch_norm,
             reuse=reuse)
         out = slim.conv2d_transpose(
             out,
@@ -127,6 +133,7 @@ def build_generator(images, actions, reuse=False):
             stride=2,
             scope='tconv3',
             padding='SAME',
+            normalizer_fn=slim.batch_norm,
             reuse=reuse)
         out = slim.conv2d_transpose(
             out,
@@ -173,7 +180,7 @@ def build_discriminator(inputs,
             reuse=reuse)
         out = slim.conv2d(
             out,
-            128,
+            256,
             [3, 3],
             activation_fn=lrelu,
             stride=2,
@@ -266,9 +273,9 @@ class Trainer():
 
         g_psnr = build_psnr(next_frame_ph, g_out)
         g_l2_loss = build_l2(g_out, next_frame_ph)
-        # g_adv_loss = build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
+        g_adv_loss = build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
         g_adv_loss = tf.reduce_mean(d_out_gen)
-        g_loss = 0.3*g_l2_loss + g_adv_loss
+        g_loss = 0.1*g_l2_loss + g_adv_loss
         # d_direct_loss = build_d_loss(d_out_direct, 0.9 * tf.ones_like(d_out_direct))
         # d_gen_loss = build_d_loss(d_out_gen, 0.0 * tf.ones_like(d_out_gen))
         # d_loss = d_direct_loss + d_gen_loss
@@ -282,7 +289,7 @@ class Trainer():
         # g_opt_op = tf.train.AdamOptimizer(name='g_opt').minimize(g_loss, var_list=g_vars)
         g_opt_op = tf.train.RMSPropOptimizer(
             5e-5,
-            name='g_opt').minimize(g_loss, var_list=d_vars)
+            name='g_opt').minimize(g_loss, var_list=g_vars)
         g_pretrain_opt_op = tf.train.RMSPropOptimizer(
             5e-5,
             name='g_pretrain_opt').minimize(g_l2_loss, var_list=g_vars)
@@ -367,14 +374,15 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir):
         test_writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'test'))
         saver = tf.train.Saver()
+        temp = 3
         for i in range(60000):
-            for j in range(5):
+            for j in range(temp):
                 input_batch, next_frame_batch, action_batch = get_batch(
                     vid_data,
                     action_data,
                     BATCH_SIZE, 0, 500,
                     HISTORY_LENGTH)
-                make_summ = (i % 100 == 0) and (j==4)
+                make_summ = (i % 100 == 0) and (j==temp-1)
                 summ = trainer.train_d(input_batch, next_frame_batch, action_batch, summarize=make_summ)
             gen_next_frames = trainer.train_g(input_batch, next_frame_batch, action_batch)
             if i % 100 == 0:

@@ -29,6 +29,7 @@ class CGAN:
             self.x = tf.placeholder('float32', (None, self.input_height, self.input_width, 3), name='input_frame')
             self.true_frames = tf.placeholder('float32', (None, self.input_height, self.input_width, 3 * self.frame_count), name='true_frames')
             self.phase = tf.placeholder(tf.bool)
+            self.action = tf.placeholder(tf.float32, [None, 2], name='action')
 
         self.G_train = self.naive_generator(self.x, is_train=self.phase)
         self.D_real = self.discriminator2d(self.true_frames, reuse=False)
@@ -62,7 +63,9 @@ class CGAN:
                 hidden2, 256, [4, 4], stride=2, scope='g_cv3_3', normalizer_fn=slim.batch_norm, normalizer_params={'is_training':is_train})
             hidden4 = slim.layers.conv2d(
                 hidden3, 512, [4, 4], stride=2, scope='g_cv2_4', normalizer_fn=slim.batch_norm, normalizer_params={'is_training':is_train})
-            #condition here?
+
+            hidden4 = tf.concat(values=[hidden4, actions], axis=3)
+
             hidden5 = slim.layers.conv2d_transpose(
                 hidden4, 256, kernel_size=[4,4], stride=2, scope='g_cvt2_1', normalizer_fn=slim.batch_norm, normalizer_params={'is_training':is_train})
             # print(hidden5.get_shape())

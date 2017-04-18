@@ -5,6 +5,16 @@ import pickle
 import matplotlib.pyplot as plt
 import argparse
 
+def get_batch(vid_data, action_data, batch_size, start, end, history_length):
+    vid_indices = sorted(random.sample(range(start, end), batch_size))
+    start_idx = np.random.choice(3)
+    batch = vid_data[vid_indices][:,:,:,3*start_idx:3*(start_idx + history_length + 1)]
+    batch = batch / 255. # normalize and center
+    action_batch = np.squeeze(action_data[vid_indices])[:,5*start_idx]
+    input_batch = batch[:,:,:,:3*history_length]
+    next_frame_batch = batch[:,:,:,3*history_length:]
+    return input_batch, next_frame_batch, action_batch
+
 def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
     input_sample = 255. * input_sample
     input_sample = input_sample.astype(np.uint8)
