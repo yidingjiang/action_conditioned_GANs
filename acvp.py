@@ -8,15 +8,26 @@ import argparse
 import random
 
 
-RECURSION_LENGTH = 1
 HISTORY_LENGTH = 1
-IMG_WIDTH = 160
-IMG_HEIGHT = 160
-BATCH_SIZE = 8
+IMG_WIDTH = 64
+IMG_HEIGHT = 64
+BATCH_SIZE = 64
 
 
 def lrelu(x, leak=0.2):
     return tf.maximum(x, leak * x)
+
+
+def get_batch(vid_data, action_data, batch_size, start, end, history_length):
+    vid_indices = sorted(random.sample(range(start, end), batch_size))
+    start_idx = np.random.choice(3)
+    batch = vid_data[vid_indices][:,:,:,3*start_idx:3*(start_idx + history_length + 1)]
+    batch = (batch / (255. / 2)) - 1. # normalize and center
+    action_batch = np.squeeze(action_data[vid_indices])[:,5*start_idx]
+    input_batch = batch[:,:,:,:3*history_length]
+    next_frame_batch = batch[:,:,:,3*history_length:]
+    return input_batch, next_frame_batch, action_batch
+
 
 def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
     input_sample = (255. / 2) * (input_sample + 1.)
@@ -51,7 +62,7 @@ def save_samples(output_path, input_sample, generated_sample, gt, sample_number)
             plt.imsave(save_path, frame[:,:,::-1])
 
 
-def build_generator(images, reuse=False):
+def build_generator(images, actions, reuse=False):
     with tf.variable_scope('g', reuse=reuse):
         out = slim.conv2d(
             images,
@@ -89,6 +100,7 @@ def build_generator(images, reuse=False):
             scope='conv4',
             padding='SAME',
             reuse=reuse)
+        out = tf.concat(values=[out, actions], axis=3)
         out = slim.conv2d_transpose(
             out,
             128,
@@ -118,33 +130,18 @@ def build_generator(images, reuse=False):
             reuse=reuse)
         out = slim.conv2d_transpose(
             out,
-            128,
+            3,
             [5, 5],
-            activation_fn=tf.nn.relu,
+            activation_fn=tf.tanh,
             stride=2,
             scope='tconv4',
-            padding='SAME',
-            reuse=reuse)
-        out = slim.conv2d(
-            tf.concat(values=[out, images], axis=3),
-            64,
-            [3, 3],
-            activation_fn=tf.nn.relu,
-            scope='conv5',
-            padding='SAME',
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            3,
-            [3, 3],
-            activation_fn=tf.tanh,
-            scope='conv6',
             padding='SAME',
             reuse=reuse)
     return out
 
 
 def build_discriminator(inputs,
+                        actions,
                         reuse=False):
     with tf.variable_scope('d', reuse=reuse):
         out = slim.conv2d(
@@ -154,7 +151,7 @@ def build_discriminator(inputs,
             activation_fn=lrelu,
             stride=2,
             scope='conv1',
-            weights_regularizer=slim.l2_regularizer(0.0005),
+            normalizer_fn=slim.batch_norm,
             reuse=reuse)
         out = slim.conv2d(
             out,
@@ -163,16 +160,16 @@ def build_discriminator(inputs,
             activation_fn=lrelu,
             stride=2,
             scope='conv2',
-            weights_regularizer=slim.l2_regularizer(0.0005),
+            normalizer_fn=slim.batch_norm,
             reuse=reuse)
         out = slim.conv2d(
-            out,
+            tf.concat(values=[out, actions], axis=3),
             128,
             [3, 3],
             activation_fn=lrelu,
             stride=2,
             scope='conv3',
-            weights_regularizer=slim.l2_regularizer(0.0005),
+            normalizer_fn=slim.batch_norm,
             reuse=reuse)
         out = slim.conv2d(
             out,
@@ -181,7 +178,6 @@ def build_discriminator(inputs,
             activation_fn=lrelu,
             stride=2,
             scope='conv4',
-            weights_regularizer=slim.l2_regularizer(0.0005),
             reuse=reuse)
         out = slim.flatten(out)
         out = slim.fully_connected(
@@ -189,7 +185,7 @@ def build_discriminator(inputs,
             512,
             activation_fn=lrelu,
             scope='fc1',
-            weights_regularizer=slim.l2_regularizer(0.0005),
+            normalizer_fn=slim.batch_norm,
             reuse=reuse)
         out = slim.fully_connected(
             out,
@@ -246,31 +242,55 @@ class Trainer():
             name='current_frame')
         next_frame_ph = tf.placeholder(
             tf.float32,
-            [None, IMG_WIDTH, IMG_HEIGHT, 3 * RECURSION_LENGTH],
+            [None, IMG_WIDTH, IMG_HEIGHT, 3],
             name='next_frame')
+        action_ph = tf.placeholder(
+            tf.float32,
+            [None, 2],
+            name='action')
 
-        g_out = build_generator(img_ph)
+        reshaped_actions = tf.reshape(action_ph, [tf.shape(action_ph)[0], 1, 1, 2])
+        reshaped_actions = tf.tile(reshaped_actions, [1, 4, 4, 1])
+        reshaped_actions_d = tf.tile(reshaped_actions, [1, 4, 4, 1])
+        g_out = build_generator(img_ph, reshaped_actions)
         d_out_gen = build_discriminator(
             tf.concat(values=[img_ph, g_out], axis=3),
+            reshaped_actions_d,
             reuse=False)
         d_out_direct = build_discriminator(
             tf.concat(values=[img_ph, next_frame_ph], axis=3),
+            reshaped_actions_d,
             reuse=True)
+        print(d_out_gen.get_shape())
+        print(g_out.get_shape())
 
         g_psnr = build_psnr(next_frame_ph, g_out)
         g_l2_loss = build_l2(g_out, next_frame_ph)
-        g_adv_loss = build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
-        g_loss = g_l2_loss + .05 * g_adv_loss
-        d_direct_loss = build_d_loss(d_out_direct, 0.9 * tf.ones_like(d_out_direct))
-        d_gen_loss = build_d_loss(d_out_gen, 0.0 * tf.ones_like(d_out_gen))
-        d_loss = d_direct_loss + d_gen_loss
+        # g_adv_loss = build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
+        g_adv_loss = tf.reduce_mean(d_out_gen)
+        g_loss = 0.3*g_l2_loss + g_adv_loss
+        # d_direct_loss = build_d_loss(d_out_direct, 0.9 * tf.ones_like(d_out_direct))
+        # d_gen_loss = build_d_loss(d_out_gen, 0.0 * tf.ones_like(d_out_gen))
+        # d_loss = d_direct_loss + d_gen_loss
+        d_direct_loss = tf.reduce_mean(d_out_direct)
+        d_gen_loss = -tf.reduce_mean(d_out_gen)
+        d_loss =  d_direct_loss + d_gen_loss
 
         g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g')
         d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd')
-        g_opt_op = tf.train.AdamOptimizer(name='g_opt').minimize(g_loss, var_list=g_vars)
-        g_pretrain_opt_op = tf.train.AdamOptimizer(
+        clip_d = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in d_vars]
+        # g_opt_op = tf.train.AdamOptimizer(name='g_opt').minimize(g_loss, var_list=g_vars)
+        g_opt_op = tf.train.RMSPropOptimizer(
+            5e-5,
+            name='g_opt').minimize(g_loss, var_list=d_vars)
+        g_pretrain_opt_op = tf.train.RMSPropOptimizer(
+            5e-5,
             name='g_pretrain_opt').minimize(g_l2_loss, var_list=g_vars)
-        d_opt_op = tf.train.AdamOptimizer(name='d_opt').minimize(d_loss, var_list=d_vars)
+        d_opt_op = tf.train.RMSPropOptimizer(
+            5e-5,
+            name='d_opt').minimize(d_loss, var_list=d_vars)
+        self.action_ph = action_ph
+        self.clip_d = clip_d
         self.g_vars = g_vars
         self.d_vars = d_vars
         self.img_ph = img_ph
@@ -302,54 +322,77 @@ class Trainer():
         return g_res
 
 
-    def train_g(self, input_images, next_frame):
+    def train_g(self, input_images, next_frame, actions):
         _, gen_next_frames = self.sess.run([self.g_opt_op, self.g_out], feed_dict={
             self.img_ph: input_images,
-            self.next_frame_ph: next_frame
+            self.next_frame_ph: next_frame,
+            self.action_ph: actions
         })
         return gen_next_frames
 
 
-    def train_d(self, input_images, next_frame, summarize=False):
+    def train_d(self, input_images, next_frame, actions, summarize=False):
         fd={
             self.img_ph: input_images,
-            self.next_frame_ph: next_frame
+            self.next_frame_ph: next_frame,
+            self.action_ph: actions
         }
         if summarize:
-            _, summ = self.sess.run([self.d_opt_op, self.merged_summaries], feed_dict=fd)
+            _, summ, _ = self.sess.run([self.d_opt_op, self.merged_summaries, self.clip_d], feed_dict=fd)
             return summ
         else:
-            self.sess.run([self.d_opt_op], feed_dict=fd)
+            self.sess.run([self.d_opt_op, self.clip_d], feed_dict=fd)
             return None
 
+    def test(self, input_images, next_frame, actions):
+        gen_next_frames, summ = self.sess.run([self.g_out, self.merged_summaries], feed_dict={
+            self.img_ph: input_images,
+            self.next_frame_ph: next_frame,
+            self.action_ph: actions
+            })
+        return gen_next_frames, summ
 
-def train(input_path, output_path, log_dir, model_dir):
+
+def train(input_path, output_path, test_output_path, log_dir, model_dir):
     f = h5py.File(input_path, 'r')
     vid_data = f['videos']
+    action_data = f['actions']
+    num_vids = vid_data.shape[0]
     with tf.Session() as sess:
         trainer = Trainer(sess)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
         writer = tf.summary.FileWriter(
-            log_dir, sess.graph)
+            os.path.join(log_dir, 'train'), sess.graph)
+        test_writer = tf.summary.FileWriter(
+            os.path.join(log_dir, 'test'))
         saver = tf.train.Saver()
         for i in range(60000):
-            vid_indices = sorted(random.sample(range(500), BATCH_SIZE))
-            start_idx = np.random.choice(40)
-            batch = vid_data[vid_indices][:,:,:,:3*(HISTORY_LENGTH + RECURSION_LENGTH)]
-            batch = (batch / (255. / 2)) - 1. # normalize and center
-            input_batch = batch[:,:,:,:3*HISTORY_LENGTH]
-            next_frame_batch = batch[:,:,:,3*HISTORY_LENGTH:]
-
-            gen_next_frames = trainer.train_g(input_batch, next_frame_batch)
-            make_summ = (i % 100 == 0)
-            summ = trainer.train_d(input_batch, next_frame_batch, summarize=make_summ)
+            for j in range(5):
+                input_batch, next_frame_batch, action_batch = get_batch(
+                    vid_data,
+                    action_data,
+                    BATCH_SIZE, 0, 500,
+                    HISTORY_LENGTH)
+                make_summ = (i % 100 == 0) and (j==4)
+                summ = trainer.train_d(input_batch, next_frame_batch, action_batch, summarize=make_summ)
+            gen_next_frames = trainer.train_g(input_batch, next_frame_batch, action_batch)
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
                 save_samples(output_path, input_batch, gen_next_frames, next_frame_batch, i)
                 saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
                 writer.add_summary(summ, i)
                 writer.flush()
+            if i % 500 == 0:
+                test_input, test_next_frame, test_actions = get_batch(
+                    vid_data,
+                    action_data,
+                    BATCH_SIZE, 500, num_vids,
+                    HISTORY_LENGTH)
+                test_output, test_summ = trainer.test(test_input, test_next_frame, test_actions)
+                save_samples(test_output_path, test_input, test_output, test_next_frame, i)
+                test_writer.add_summary(test_summ, i)
+
 
 
 if __name__ == '__main__':
@@ -357,9 +400,10 @@ if __name__ == '__main__':
     parser.add_argument('input_path', type=str)
     parser.add_argument('output_path', type=str)
     args = parser.parse_args()
-    output_path = os.path.join(args.output_path, 'output')
+    output_path = os.path.join(args.output_path, 'train_output')
+    test_output_path = os.path.join(args.output_path, 'test_output')
     model_dir = os.path.join(args.output_path, 'models')
     log_dir = os.path.join(args.output_path, 'logs')
     os.makedirs(args.output_path)
     os.makedirs(model_dir)
-    train(args.input_path, output_path, log_dir, model_dir)
+    train(args.input_path, output_path, test_output_path, log_dir, model_dir)
