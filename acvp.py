@@ -222,11 +222,6 @@ def build_gdl(g_out, next_frames, alpha):
     return tf.reduce_sum((grad_diff_x ** alpha + grad_diff_y ** alpha))
 
 
-def build_l2(g_out, next_frames):
-    return tf.losses.mean_squared_error(
-        g_out, next_frames)
-
-
 def build_g_adv_loss(d_out_gen, arg_loss):
     if arg_loss == 'bce':
         return tf.losses.sigmoid_cross_entropy(
@@ -255,7 +250,7 @@ def build_psnr(true, pred):
 
 
 class Trainer():
-    def __init__(self, sess, arg_adv, arg_loss, arg_opt):
+    def __init__(self, sess, arg_adv, arg_loss, arg_opt, arg_residual):
         self.sess = sess
 
         self.img_ph = tf.placeholder(
@@ -275,8 +270,15 @@ class Trainer():
         reshaped_actions = tf.tile(reshaped_actions, [1, 4, 4, 1])
         reshaped_actions_d = tf.tile(reshaped_actions, [1, 4, 4, 1])
         self.g_out = build_generator(self.img_ph, reshaped_actions)
+        if arg_residual:
+            self.g_next_frame = self.img_ph + self.g_out
+            gt_output = self.next_frame_ph - self.img_ph
+        else:
+            self.g_next_frame = self.g_out
+            gt_output = self.next_frame_ph
+
         self.d_out_gen = build_discriminator(
-            tf.concat(values=[self.img_ph, self.g_out], axis=3),
+            tf.concat(values=[self.img_ph, self.g_next_frame], axis=3),
             reshaped_actions_d,
             reuse=False)
         self.d_out_direct = build_discriminator(
@@ -284,8 +286,10 @@ class Trainer():
             reshaped_actions_d,
             reuse=True)
 
-        g_psnr = build_psnr(self.next_frame_ph, self.g_out)
-        g_l2_loss = build_l2(self.g_out, self.next_frame_ph)
+        g_psnr = build_psnr(self.next_frame_ph, self.g_next_frame)
+        g_l2_loss = tf.losses.mean_squared_error(
+            self.g_out, gt_output)
+
         if arg_adv:
             g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
             self.g_loss = 0.1 * g_l2_loss + g_adv_loss
@@ -332,7 +336,7 @@ class Trainer():
 
 
     def train_g(self, input_images, next_frame, actions):
-        _, gen_next_frames = self.sess.run([self.g_opt_op, self.g_out], feed_dict={
+        _, gen_next_frames = self.sess.run([self.g_opt_op, self.g_next_frame], feed_dict={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame,
             self.action_ph: actions
@@ -354,7 +358,7 @@ class Trainer():
             return None
 
     def test(self, input_images, next_frame, actions):
-        gen_next_frames, summ = self.sess.run([self.g_out, self.merged_summaries], feed_dict={
+        gen_next_frames, summ = self.sess.run([self.g_next_frame, self.merged_summaries], feed_dict={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame,
             self.action_ph: actions
@@ -362,7 +366,7 @@ class Trainer():
         return gen_next_frames, summ
 
 
-def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt):
+def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt, arg_residual):
     img_data_train, action_data_train = load_tfrecord.build_tfrecord_input(
         BATCH_SIZE,
         input_path,
@@ -375,7 +379,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
     action_data_test = tf.squeeze(action_data_test[:,0,:])
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
-        trainer = Trainer(sess, arg_adv, arg_loss, arg_opt)
+        trainer = Trainer(sess, arg_adv, arg_loss, arg_opt, arg_residual)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
         writer = tf.summary.FileWriter(
@@ -418,6 +422,7 @@ if __name__ == '__main__':
     parser.add_argument('--adv', action='store_true')
     parser.add_argument('--loss', type=str, default='wass')
     parser.add_argument('--opt', type=str, default='rmsprop')
+    parser.add_argument('--residual', action='store_true')
     args = parser.parse_args()
     output_path = os.path.join(args.output_path, 'train_output')
     test_output_path = os.path.join(args.output_path, 'test_output')
@@ -432,4 +437,5 @@ if __name__ == '__main__':
           model_dir,
           args.adv,
           args.loss,
-          args.opt)
+          args.opt,
+          args.residual)
