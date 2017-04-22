@@ -227,9 +227,27 @@ def build_l2(g_out, next_frames):
         g_out, next_frames)
 
 
-def build_d_loss(d_out, label):
-    return tf.losses.sigmoid_cross_entropy(
-        label, d_out)
+def build_g_adv_loss(d_out_gen, arg_loss):
+    if arg_loss == 'bce':
+        return tf.losses.sigmoid_cross_entropy(
+            tf.ones_like(d_out_gen), d_out_gen)
+    else:
+        return tf.reduce_mean(d_out_gen)
+
+
+def build_d_loss(d_out_direct, d_out_gen, arg_loss):
+    if arg_loss == 'bce':
+        d_direct_loss = tf.losses.sigmoid_cross_entropy(
+            0.9 * tf.ones_like(d_out_direct), d_out_direct)
+        d_gen_loss = tf.losses.sigmoid_cross_entropy(
+            tf.zeros_like(d_out_gen), d_out_gen)
+    else:
+        d_direct_loss = tf.reduce_mean(d_out_direct)
+        d_gen_loss = -tf.reduce_mean(d_out_gen)
+    d_direct_loss_summary = tf.summary.scalar('discriminator_direct_loss', d_direct_loss)
+    d_gen_loss_summary = tf.summary.scalar('discriminator_gen_loss', d_gen_loss)
+    return d_direct_loss + d_gen_loss
+
 
 
 def build_psnr(true, pred):
@@ -237,80 +255,71 @@ def build_psnr(true, pred):
 
 
 class Trainer():
-    def __init__(self, sess):
-        img_ph = tf.placeholder(
+    def __init__(self, sess, arg_adv, arg_loss, arg_opt):
+        self.sess = sess
+
+        self.img_ph = tf.placeholder(
             tf.float32,
             [None, IMG_WIDTH, IMG_HEIGHT, 3 * HISTORY_LENGTH],
             name='current_frame')
-        next_frame_ph = tf.placeholder(
+        self.next_frame_ph = tf.placeholder(
             tf.float32,
             [None, IMG_WIDTH, IMG_HEIGHT, 3],
             name='next_frame')
-        action_ph = tf.placeholder(
+        self.action_ph = tf.placeholder(
             tf.float32,
             [None, 10],
             name='action')
 
-        reshaped_actions = tf.reshape(action_ph, [tf.shape(action_ph)[0], 1, 1, 10])
+        reshaped_actions = tf.reshape(self.action_ph, [tf.shape(self.action_ph)[0], 1, 1, 10])
         reshaped_actions = tf.tile(reshaped_actions, [1, 4, 4, 1])
         reshaped_actions_d = tf.tile(reshaped_actions, [1, 4, 4, 1])
-        g_out = build_generator(img_ph, reshaped_actions)
-        d_out_gen = build_discriminator(
-            tf.concat(values=[img_ph, g_out], axis=3),
+        self.g_out = build_generator(self.img_ph, reshaped_actions)
+        self.d_out_gen = build_discriminator(
+            tf.concat(values=[self.img_ph, self.g_out], axis=3),
             reshaped_actions_d,
             reuse=False)
-        d_out_direct = build_discriminator(
-            tf.concat(values=[img_ph, next_frame_ph], axis=3),
+        self.d_out_direct = build_discriminator(
+            tf.concat(values=[self.img_ph, self.next_frame_ph], axis=3),
             reshaped_actions_d,
             reuse=True)
 
-        g_psnr = build_psnr(next_frame_ph, g_out)
-        g_l2_loss = build_l2(g_out, next_frame_ph)
-        g_adv_loss = build_d_loss(d_out_gen, tf.ones_like(d_out_gen))
-        g_adv_loss = tf.reduce_mean(d_out_gen)
-        g_loss = 0.1*g_l2_loss + g_adv_loss
-        # d_direct_loss = build_d_loss(d_out_direct, 0.9 * tf.ones_like(d_out_direct))
-        # d_gen_loss = build_d_loss(d_out_gen, 0.0 * tf.ones_like(d_out_gen))
-        # d_loss = d_direct_loss + d_gen_loss
-        d_direct_loss = tf.reduce_mean(d_out_direct)
-        d_gen_loss = -tf.reduce_mean(d_out_gen)
-        d_loss =  d_direct_loss + d_gen_loss
+        g_psnr = build_psnr(self.next_frame_ph, self.g_out)
+        g_l2_loss = build_l2(self.g_out, self.next_frame_ph)
+        if arg_adv:
+            g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
+            self.g_loss = 0.1 * g_l2_loss + g_adv_loss
+        else:
+            self.g_loss = g_l2_loss
 
-        g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g')
-        d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd')
-        clip_d = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in d_vars]
-        # g_opt_op = tf.train.AdamOptimizer(name='g_opt').minimize(g_loss, var_list=g_vars)
-        g_opt_op = tf.train.RMSPropOptimizer(
-            5e-5,
-            name='g_opt').minimize(g_loss, var_list=g_vars)
-        g_pretrain_opt_op = tf.train.RMSPropOptimizer(
-            5e-5,
-            name='g_pretrain_opt').minimize(g_l2_loss, var_list=g_vars)
-        d_opt_op = tf.train.RMSPropOptimizer(
-            5e-5,
-            name='d_opt').minimize(d_loss, var_list=d_vars)
-        self.action_ph = action_ph
-        self.clip_d = clip_d
-        self.g_vars = g_vars
-        self.d_vars = d_vars
-        self.img_ph = img_ph
-        self.next_frame_ph = next_frame_ph
-        self.d_out_direct = d_out_direct
-        self.g_out = g_out
-        self.g_loss = g_loss
-        self.d_loss = d_loss
-        self.g_opt_op = g_opt_op
-        self.g_pretrain_opt_op = g_pretrain_opt_op
-        self.d_opt_op = d_opt_op
-        self.sess = sess
+        self.d_loss = build_d_loss(self.d_out_direct, self.d_out_gen, arg_loss)
 
-        self.d_loss_summary = tf.summary.scalar('discriminator_loss', d_loss)
-        self.d_direct_loss_summary = tf.summary.scalar('discriminator_direct_loss', d_direct_loss)
-        self.d_gen_loss_summary = tf.summary.scalar('discriminator_gen_loss', d_gen_loss)
-        self.g_loss_summary = tf.summary.scalar('g_loss', g_loss)
-        self.g_l2_loss_summary = tf.summary.scalar('g_l2_loss', g_l2_loss)
-        self.g_adv_loss_summary = tf.summary.scalar('g_adv_loss', g_adv_loss)
-        self.psnr_summary = tf.summary.scalar('g_psnr', g_psnr)
+        self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g')
+        self.d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd')
+        self.clip_d = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in self.d_vars]
+        if arg_opt == 'rmsprop':
+            optimizer = tf.train.RMSPropOptimizer
+            lr = 5e-5
+        else:
+            optimizer = tf.train.AdamOptimizer
+            lr = 1e-3
+
+        self.g_opt_op = optimizer(
+            lr,
+            name='g_opt').minimize(self.g_loss, var_list=self.g_vars)
+        self.g_pretrain_opt_op = optimizer(
+            lr,
+            name='g_pretrain_opt').minimize(g_l2_loss, var_list=self.g_vars)
+        self.d_opt_op = optimizer(
+            lr,
+            name='d_opt').minimize(self.d_loss, var_list=self.d_vars)
+
+        d_loss_summary = tf.summary.scalar('discriminator_loss', self.d_loss)
+        g_loss_summary = tf.summary.scalar('g_loss', self.g_loss)
+        g_l2_loss_summary = tf.summary.scalar('g_l2_loss', g_l2_loss)
+        if arg_adv:
+            g_adv_loss_summary = tf.summary.scalar('g_adv_loss', g_adv_loss)
+        psnr_summary = tf.summary.scalar('g_psnr', g_psnr)
         self.merged_summaries = tf.summary.merge_all()
 
 
@@ -353,7 +362,7 @@ class Trainer():
         return gen_next_frames, summ
 
 
-def train(input_path, output_path, test_output_path, log_dir, model_dir):
+def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt):
     img_data_train, action_data_train = load_tfrecord.build_tfrecord_input(
         BATCH_SIZE,
         input_path,
@@ -366,7 +375,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir):
     action_data_test = tf.squeeze(action_data_test[:,0,:])
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
-        trainer = Trainer(sess)
+        trainer = Trainer(sess, arg_adv, arg_loss, arg_opt)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
         writer = tf.summary.FileWriter(
@@ -406,6 +415,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('input_path', type=str)
     parser.add_argument('output_path', type=str)
+    parser.add_argument('--adv', action='store_true')
+    parser.add_argument('--loss', type=str, default='wass')
+    parser.add_argument('--opt', type=str, default='rmsprop')
     args = parser.parse_args()
     output_path = os.path.join(args.output_path, 'train_output')
     test_output_path = os.path.join(args.output_path, 'test_output')
@@ -413,4 +425,11 @@ if __name__ == '__main__':
     log_dir = os.path.join(args.output_path, 'logs')
     os.makedirs(args.output_path)
     os.makedirs(model_dir)
-    train(args.input_path, output_path, test_output_path, log_dir, model_dir)
+    train(args.input_path,
+          output_path,
+          test_output_path,
+          log_dir,
+          model_dir,
+          args.adv,
+          args.loss,
+          args.opt)
