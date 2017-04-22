@@ -8,11 +8,12 @@ import argparse
 import random
 import load_tfrecord
 
+np.random.seed(7)
 
 HISTORY_LENGTH = 1
 IMG_WIDTH = 64
 IMG_HEIGHT = 64
-BATCH_SIZE = 10
+BATCH_SIZE = 64
 
 
 def lrelu(x, leak=0.2):
@@ -72,7 +73,7 @@ def build_generator(images, actions, reuse=False):
         out = slim.conv2d(
             out,
             128,
-            [3, 3],
+            [5, 5],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv2',
@@ -82,7 +83,7 @@ def build_generator(images, actions, reuse=False):
         out = slim.conv2d(
             out,
             256,
-            [3, 3],
+            [5, 5],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv3',
@@ -92,7 +93,7 @@ def build_generator(images, actions, reuse=False):
         out = slim.conv2d(
             out,
             512,
-            [3, 3],
+            [5, 5],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='conv4',
@@ -102,8 +103,8 @@ def build_generator(images, actions, reuse=False):
         out = tf.concat(values=[out, actions], axis=3)
         out = slim.conv2d_transpose(
             out,
-            512,
-            [3, 3],
+            256,
+            [5, 5],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv1',
@@ -112,8 +113,8 @@ def build_generator(images, actions, reuse=False):
             reuse=reuse)
         out = slim.conv2d_transpose(
             out,
-            256,
-            [3, 3],
+            128,
+            [5, 5],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv2',
@@ -122,8 +123,8 @@ def build_generator(images, actions, reuse=False):
             reuse=reuse)
         out = slim.conv2d_transpose(
             out,
-            128,
-            [3, 3],
+            64,
+            [5, 5],
             activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv3',
@@ -141,7 +142,6 @@ def build_generator(images, actions, reuse=False):
             reuse=reuse)
     return out
 
-
 def build_discriminator(inputs,
                         actions,
                         reuse=False):
@@ -158,7 +158,7 @@ def build_discriminator(inputs,
         out = slim.conv2d(
             out,
             128,
-            [3, 3],
+            [5, 5],
             activation_fn=lrelu,
             stride=2,
             scope='conv2',
@@ -167,7 +167,7 @@ def build_discriminator(inputs,
         out = slim.conv2d(
             tf.concat(values=[out, actions], axis=3),
             128,
-            [3, 3],
+            [5, 5],
             activation_fn=lrelu,
             stride=2,
             scope='conv3',
@@ -176,26 +176,27 @@ def build_discriminator(inputs,
         out = slim.conv2d(
             out,
             256,
-            [3, 3],
+            [5, 5],
             activation_fn=lrelu,
             stride=2,
             scope='conv4',
             reuse=reuse)
-        out = slim.flatten(out)
-        out = slim.fully_connected(
+        out = slim.conv2d(
             out,
             512,
+            [5, 5],
             activation_fn=lrelu,
-            scope='fc1',
-            normalizer_fn=slim.batch_norm,
+            stride=2,
+            scope='conv5',
             reuse=reuse)
-        out = slim.fully_connected(
+        out = slim.conv2d(
             out,
             1,
+            [2, 2],
             activation_fn=None,
-            scope='fc2',
+            stride=1,
+            scope='conv6',
             reuse=reuse)
-        out = tf.squeeze(out)
     return out
 
 
@@ -327,10 +328,11 @@ class Trainer():
         self.merged_summaries = tf.summary.merge_all()
 
 
-    def pretrain_g(self, input_images, next_frame):
+    def pretrain_g(self, input_images, next_frame, actions):
         _, g_res = self.sess.run([self.g_pretrain_opt_op, self.g_loss], feed_dict={
             self.img_ph: input_images,
-            self.next_frame_ph: next_frame
+            self.next_frame_ph: next_frame,
+            self.action_ph: actions
         })
         return g_res
 
@@ -388,7 +390,17 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
             os.path.join(log_dir, 'test'))
         saver = tf.train.Saver()
         temp = 3
+
         for i in range(60000):
+            if i < 100:
+                input_batch, next_frame_batch, action_batch = get_batch(
+                    sess,
+                    img_data_train,
+                    action_data_train,
+                    BATCH_SIZE)
+                gen_next_frames = trainer.pretrain_g(input_batch, next_frame_batch, action_batch)
+                print('pre-train iter: '+str(i))
+                continue
             for j in range(temp):
                 input_batch, next_frame_batch, action_batch = get_batch(
                     sess,
