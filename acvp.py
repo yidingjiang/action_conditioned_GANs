@@ -6,27 +6,22 @@ import matplotlib.pyplot as plt
 import os
 import argparse
 import random
+import load_tfrecord
 
 
 HISTORY_LENGTH = 1
 IMG_WIDTH = 64
 IMG_HEIGHT = 64
-BATCH_SIZE = 64
+BATCH_SIZE = 10
 
 
 def lrelu(x, leak=0.2):
     return tf.maximum(x, leak * x)
 
 
-def get_batch(vid_data, action_data, batch_size, start, end, history_length):
-    vid_indices = sorted(random.sample(range(start, end), batch_size))
-    start_idx = np.random.choice(3)
-    batch = vid_data[vid_indices][:,:,:,3*start_idx:3*(start_idx + history_length + 1)]
-    batch = (batch / (255. / 2)) - 1. # normalize and center
-    action_batch = np.squeeze(action_data[vid_indices])[:,5*start_idx]
-    input_batch = batch[:,:,:,:3*history_length]
-    next_frame_batch = batch[:,:,:,3*history_length:]
-    return input_batch, next_frame_batch, action_batch
+def get_batch(sess, img_tensor, action_state_tensor, batch_size):
+    img, action = sess.run([img_tensor, action_state_tensor])
+    return img[:,0,:,:,:], img[:,1,:,:,:], action
 
 
 def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
@@ -253,10 +248,10 @@ class Trainer():
             name='next_frame')
         action_ph = tf.placeholder(
             tf.float32,
-            [None, 2],
+            [None, 10],
             name='action')
 
-        reshaped_actions = tf.reshape(action_ph, [tf.shape(action_ph)[0], 1, 1, 2])
+        reshaped_actions = tf.reshape(action_ph, [tf.shape(action_ph)[0], 1, 1, 10])
         reshaped_actions = tf.tile(reshaped_actions, [1, 4, 4, 1])
         reshaped_actions_d = tf.tile(reshaped_actions, [1, 4, 4, 1])
         g_out = build_generator(img_ph, reshaped_actions)
@@ -268,8 +263,6 @@ class Trainer():
             tf.concat(values=[img_ph, next_frame_ph], axis=3),
             reshaped_actions_d,
             reuse=True)
-        print(d_out_gen.get_shape())
-        print(g_out.get_shape())
 
         g_psnr = build_psnr(next_frame_ph, g_out)
         g_l2_loss = build_l2(g_out, next_frame_ph)
@@ -361,11 +354,18 @@ class Trainer():
 
 
 def train(input_path, output_path, test_output_path, log_dir, model_dir):
-    f = h5py.File(input_path, 'r')
-    vid_data = f['videos']
-    action_data = f['actions']
-    num_vids = vid_data.shape[0]
+    img_data_train, action_data_train = load_tfrecord.build_tfrecord_input(
+        BATCH_SIZE,
+        input_path,
+        1 + HISTORY_LENGTH, .7, True)
+    img_data_test, action_data_test = load_tfrecord.build_tfrecord_input(
+        BATCH_SIZE,
+        input_path,
+        1 + HISTORY_LENGTH, .7, True, training=False)
+    action_data_train = tf.squeeze(action_data_train[:,0,:])
+    action_data_test = tf.squeeze(action_data_test[:,0,:])
     with tf.Session() as sess:
+        tf.train.start_queue_runners(sess)
         trainer = Trainer(sess)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
@@ -378,10 +378,10 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir):
         for i in range(60000):
             for j in range(temp):
                 input_batch, next_frame_batch, action_batch = get_batch(
-                    vid_data,
-                    action_data,
-                    BATCH_SIZE, 0, 500,
-                    HISTORY_LENGTH)
+                    sess,
+                    img_data_train,
+                    action_data_train,
+                    BATCH_SIZE)
                 make_summ = (i % 100 == 0) and (j==temp-1)
                 summ = trainer.train_d(input_batch, next_frame_batch, action_batch, summarize=make_summ)
             gen_next_frames = trainer.train_g(input_batch, next_frame_batch, action_batch)
@@ -393,14 +393,13 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir):
                 writer.flush()
             if i % 500 == 0:
                 test_input, test_next_frame, test_actions = get_batch(
-                    vid_data,
-                    action_data,
-                    BATCH_SIZE, 500, num_vids,
-                    HISTORY_LENGTH)
+                    sess,
+                    img_data_test,
+                    action_data_test,
+                    BATCH_SIZE)
                 test_output, test_summ = trainer.test(test_input, test_next_frame, test_actions)
                 save_samples(test_output_path, test_input, test_output, test_next_frame, i)
                 test_writer.add_summary(test_summ, i)
-
 
 
 if __name__ == '__main__':
