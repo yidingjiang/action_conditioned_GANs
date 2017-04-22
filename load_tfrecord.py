@@ -54,7 +54,7 @@ def build_tfrecord_input(batch_size,
 
   image_seq, state_seq, action_seq = [], [], []
 
-  for i in range(sequence_length):
+  for i in range(0, 4, 3):
     image_name = 'move/' + str(i) + '/image/encoded'
     action_name = 'move/' + str(i) + '/commanded_pose/vec_pitch_yaw'
     state_name = 'move/' + str(i) + '/endeffector/vec_pitch_yaw'

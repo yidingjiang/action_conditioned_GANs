@@ -288,12 +288,15 @@ class Trainer():
             reuse=True)
 
         g_psnr = build_psnr(self.next_frame_ph, self.g_next_frame)
-        g_l2_loss = tf.losses.mean_squared_error(
-            self.g_out, gt_output)
+        # g_l2_loss = tf.losses.mean_squared_error(
+        #     self.g_out, gt_output)
+        g_l2_loss = tf.norm(self.g_out - gt_output, ord=1, axis=None, keep_dims=False, name='l1_difference')
+        if arg_residual:
+            g_l2_loss *= 10
 
         if arg_adv:
             g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
-            self.g_loss = 0.1 * g_l2_loss + g_adv_loss
+            self.g_loss = 0.1*g_l2_loss + g_adv_loss
         else:
             self.g_loss = g_l2_loss
 
