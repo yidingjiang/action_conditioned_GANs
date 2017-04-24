@@ -238,6 +238,67 @@ def build_generator_atn(inputs,
 
         return foreground, mask, background
 
+def build_generator_residual(inputs,
+                                actions,
+                                reuse=False):
+    with tf.variable_scope('g', reuse=reuse):
+        out = slim.conv2d(
+            inputs,
+            64,
+            [5, 5],
+            activation_fn=tf.nn.relu,
+            stride=2,
+            scope='conv1',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        out = slim.conv2d(
+            out,
+            128,
+            [5, 5],
+            activation_fn=tf.nn.relu,
+            stride=2,
+            scope='conv2',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        out = slim.conv2d(
+            out,
+            256,
+            [5, 5],
+            activation_fn=tf.nn.relu,
+            stride=2,
+            scope='conv3',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        out = slim.conv2d(
+            out,
+            512,
+            [5, 5],
+            activation_fn=tf.nn.relu,
+            stride=2,
+            scope='conv4',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        out = tf.concat(values=[out, actions], axis=3)
+        # out = slim.conv2d(
+        #     out,
+        #     512,
+        #     [4, 4],
+        #     activation_fn=tf.nn.relu,
+        #     stride=1,
+        #     scope='conv4',
+        #     padding='SAME',
+        #     normalizer_fn=slim.batch_norm,
+        #     reuse=reuse)
+        foreground = decoder_block(out, name='foreground')
+        mask = decoder_block(out, name='mask', output_fn=tf.nn.sigmoid)
+        negative_mask = tf.ones_like(mask) - mask
+        out = tf.multiply(mask, foreground) + tf.multiply(negative_mask, inputs)
+        return out
+
 def build_discriminator(inputs,
                         actions,
                         reuse=False):
@@ -341,7 +402,6 @@ def build_d_loss(d_out_direct, d_out_gen, arg_loss):
     return d_direct_loss + d_gen_loss
 
 
-
 def build_psnr(true, pred):
     return 10.0 * tf.log(1.0 / tf.losses.mean_squared_error(true, pred)) / tf.log(10.0)
 
@@ -368,19 +428,19 @@ class Trainer():
         reshaped_actions_d = tf.tile(reshaped_actions, [1, 4, 4, 1])
 
         if arg_attention:
-            gt_output = self.next_frame_ph
             self.foreground, self.mask, self.background = build_generator_atn(self.img_ph, reshaped_actions)
             negative_mask = tf.ones_like(self.mask) - self.mask
             self.g_out = tf.multiply(self.mask, self.foreground) + tf.multiply(negative_mask, self.background)
             self.g_next_frame = self.g_out
+            gt_output = self.next_frame_ph
+        elif arg_residual:
+            self.g_out = build_generator_residual(self.img_ph, reshaped_actions)
+            self.g_next_frame = self.g_out
+            gt_output = self.next_frame_ph
         else:
             self.g_out = build_generator(self.img_ph, reshaped_actions)
-            if arg_residual:
-                self.g_next_frame = self.img_ph + self.g_out
-                gt_output = self.next_frame_ph - self.img_ph
-            else:
-                self.g_next_frame = self.g_out
-                gt_output = self.next_frame_ph
+            self.g_next_frame = self.g_out
+            gt_output = self.next_frame_ph
 
         self.d_out_gen = build_discriminator(
             tf.concat(values=[self.img_ph, self.g_next_frame], axis=3),
@@ -396,7 +456,7 @@ class Trainer():
         #     self.g_out, gt_output)
         g_l2_loss = tf.norm(self.g_out - gt_output, ord=1, axis=None, keep_dims=False, name='l1_difference')
         if arg_residual:
-            g_l2_loss *= 100
+            g_l2_loss *= 1
 
         if arg_adv:
             g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
@@ -414,7 +474,7 @@ class Trainer():
             lr = 5e-5
         else:
             optimizer = tf.train.AdamOptimizer
-            lr = 1e-3
+            lr = 5e-4
 
         self.g_opt_op = optimizer(
             lr,
@@ -496,10 +556,14 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
         test_writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'test'))
         saver = tf.train.Saver()
-        temp = 3
+
+        if arg_loss == 'wass':
+            D_per_G = 5
+        else:
+            D_per_G = 1
 
         for i in range(60000):
-            if i < 100:
+            if i < 50:
                 input_batch, next_frame_batch, action_batch = get_batch(
                     sess,
                     img_data_train,
@@ -508,13 +572,13 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                 gen_next_frames = trainer.pretrain_g(input_batch, next_frame_batch, action_batch)
                 print('pre-train iter: '+str(i))
                 continue
-            for j in range(temp):
+            for j in range(D_per_G):
                 input_batch, next_frame_batch, action_batch = get_batch(
                     sess,
                     img_data_train,
                     action_data_train,
                     BATCH_SIZE)
-                make_summ = (i % 100 == 0) and (j==temp-1)
+                make_summ = (i % 100 == 0) and (j==D_per_G-1)
                 summ = trainer.train_d(input_batch, next_frame_batch, action_batch, summarize=make_summ)
             gen_next_frames = trainer.train_g(input_batch, next_frame_batch, action_batch)
             if i % 100 == 0:
