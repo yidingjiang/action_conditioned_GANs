@@ -7,6 +7,7 @@ import os
 import argparse
 import random
 import load_tfrecord
+from utils import *
 
 np.random.seed(7)
 
@@ -15,378 +16,12 @@ IMG_WIDTH = 64
 IMG_HEIGHT = 64
 BATCH_SIZE = 64
 
-
-def lrelu(x, leak=0.2):
-    return tf.maximum(x, leak * x)
-
-
-def get_batch(sess, img_tensor, action_state_tensor, batch_size):
-    img, action = sess.run([img_tensor, action_state_tensor])
-    return img[:,0,:,:,:], img[:,1,:,:,:], action
-
-
-def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
-    input_sample = (255. / 2) * (input_sample + 1.)
-    input_sample = input_sample.astype(np.uint8)
-    generated_sample = (255. / 2) * (generated_sample + 1.)
-    generated_sample = generated_sample.astype(np.uint8)
-    gt = (255. / 2) * (gt + 1.)
-    gt = gt.astype(np.uint8)
-    save_folder =  os.path.join(
-        output_path,
-        'sample{:d}'.format(sample_number))
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
-    for i in range(input_sample.shape[0]):
-        vid_folder = os.path.join(save_folder, 'vid{:d}'.format(i))
-        if not os.path.exists(vid_folder):
-            os.makedirs(vid_folder)
-        vid = input_sample[i]
-        for j in range(int(vid.shape[2] / 3)):
-            save_path = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
-            plt.imsave(save_path, frame[:,:,::-1])
-        vid = generated_sample[i]
-        for j in range(int(vid.shape[2] / 3)):
-            save_path = os.path.join(vid_folder, 'generated{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
-            plt.imsave(save_path, frame[:,:,::-1])
-        vid = gt[i]
-        for j in range(int(vid.shape[2] / 3)):
-            save_path = os.path.join(vid_folder, 'ground_truth{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
-            plt.imsave(save_path, frame[:,:,::-1])
-
-def build_generator(images, actions, reuse=False):
-    with tf.variable_scope('g', reuse=reuse):
-        out = slim.conv2d(
-            images,
-            64,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv1',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            128,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv2',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            256,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv3',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            512,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv4',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = tf.concat(values=[out, actions], axis=3)
-        out = slim.conv2d_transpose(
-            out,
-            256,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='tconv1',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d_transpose(
-            out,
-            128,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='tconv2',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d_transpose(
-            out,
-            64,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='tconv3',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d_transpose(
-            out,
-            3,
-            [5, 5],
-            activation_fn=tf.tanh,
-            stride=2,
-            scope='tconv4',
-            padding='SAME',
-            reuse=reuse)
-    return out
-
-def decoder_block(input,
-                    name,
-                    output_fn=tf.tanh,
-                    reuse=False):
-    out = slim.conv2d_transpose(
-        input,
-        256,
-        [5, 5],
-        activation_fn=tf.nn.relu,
-        stride=2,
-        scope= name + 'tconv1',
-        padding='SAME',
-        normalizer_fn=slim.batch_norm,
-        reuse=reuse)
-    out = slim.conv2d_transpose(
-        out,
-        128,
-        [5, 5],
-        activation_fn=tf.nn.relu,
-        stride=2,
-        scope= name + 'tconv2',
-        padding='SAME',
-        normalizer_fn=slim.batch_norm,
-        reuse=reuse)
-    out = slim.conv2d_transpose(
-        out,
-        64,
-        [5, 5],
-        activation_fn=tf.nn.relu,
-        stride=2,
-        scope= name + 'tconv3',
-        padding='SAME',
-        normalizer_fn=slim.batch_norm,
-        reuse=reuse)
-    out = slim.conv2d_transpose(
-        out,
-        3,
-        [5, 5],
-        activation_fn=output_fn,
-        stride=2,
-        scope= name + 'tconv4',
-        padding='SAME',
-        reuse=reuse)
-    return out
-
-def build_generator_atn(inputs,
-                        actions,
-                        reuse=False):
-    with tf.variable_scope('g', reuse=reuse):
-        out = slim.conv2d(
-            inputs,
-            64,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv1',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            128,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv2',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            256,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv3',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            512,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv4',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = tf.concat(values=[out, actions], axis=3)
-
-        foreground = decoder_block(out, name='foreground')
-        mask = decoder_block(out, name='mask', output_fn=tf.nn.sigmoid)
-        background = decoder_block(out, name='background')
-
-        return foreground, mask, background
-
-def build_generator_residual(inputs,
-                                actions,
-                                reuse=False):
-    with tf.variable_scope('g', reuse=reuse):
-        out = slim.conv2d(
-            inputs,
-            64,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv1',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            128,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv2',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            256,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv3',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            512,
-            [5, 5],
-            activation_fn=tf.nn.relu,
-            stride=2,
-            scope='conv4',
-            padding='SAME',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = tf.concat(values=[out, actions], axis=3)
-        # out = slim.conv2d(
-        #     out,
-        #     512,
-        #     [4, 4],
-        #     activation_fn=tf.nn.relu,
-        #     stride=1,
-        #     scope='conv4',
-        #     padding='SAME',
-        #     normalizer_fn=slim.batch_norm,
-        #     reuse=reuse)
-        foreground = decoder_block(out, name='foreground')
-        mask = decoder_block(out, name='mask', output_fn=tf.nn.sigmoid)
-        negative_mask = tf.ones_like(mask) - mask
-        out = tf.multiply(mask, foreground) + tf.multiply(negative_mask, inputs)
-        return out
-
-def build_discriminator(inputs,
-                        actions,
-                        reuse=False):
-    with tf.variable_scope('d', reuse=reuse):
-        out = slim.conv2d(
-            inputs,
-            64,
-            [5, 5],
-            activation_fn=lrelu,
-            stride=2,
-            scope='conv1',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            128,
-            [5, 5],
-            activation_fn=lrelu,
-            stride=2,
-            scope='conv2',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            tf.concat(values=[out, actions], axis=3),
-            128,
-            [5, 5],
-            activation_fn=lrelu,
-            stride=2,
-            scope='conv3',
-            normalizer_fn=slim.batch_norm,
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            256,
-            [5, 5],
-            activation_fn=lrelu,
-            stride=2,
-            scope='conv4',
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            512,
-            [5, 5],
-            activation_fn=lrelu,
-            stride=2,
-            scope='conv5',
-            reuse=reuse)
-        out = slim.conv2d(
-            out,
-            1,
-            [2, 2],
-            activation_fn=None,
-            stride=1,
-            scope='conv6',
-            reuse=reuse)
-    return out
-
-
-def build_gdl(g_out, next_frames, alpha):
-    '''
-    Copied from:
-    https://github.com/dyelax/Adversarial_Video_Generation/
-    '''
-    pos = tf.constant(np.identity(3), dtype=tf.float32)
-    neg = -1 * pos
-    filter_x = tf.expand_dims(tf.stack([neg, pos]), 0)
-    filter_y = tf.stack([tf.expand_dims(pos, 0), tf.expand_dims(neg, 0)])
-    strides = [1, 1, 1, 1]
-    padding = 'SAME'
-
-    gen_dx = tf.abs(tf.nn.conv2d(g_out, filter_x, strides, padding=padding))
-    gen_dy = tf.abs(tf.nn.conv2d(g_out, filter_y, strides, padding=padding))
-    gt_dx = tf.abs(tf.nn.conv2d(next_frames, filter_x, strides, padding=padding))
-    gt_dy = tf.abs(tf.nn.conv2d(next_frames, filter_y, strides, padding=padding))
-
-    grad_diff_x = tf.abs(gt_dx - gen_dx)
-    grad_diff_y = tf.abs(gt_dy - gen_dy)
-
-    return tf.reduce_sum((grad_diff_x ** alpha + grad_diff_y ** alpha))
-
-
 def build_g_adv_loss(d_out_gen, arg_loss):
     if arg_loss == 'bce':
         return tf.losses.sigmoid_cross_entropy(
             tf.ones_like(d_out_gen), d_out_gen)
     else:
         return tf.reduce_mean(d_out_gen)
-
 
 def build_d_loss(d_out_direct, d_out_gen, arg_loss):
     if arg_loss == 'bce':
@@ -407,20 +42,20 @@ def build_psnr(true, pred):
 
 
 class Trainer():
-    def __init__(self, sess, arg_adv, arg_loss, arg_opt, arg_residual, arg_attention):
+    def __init__(self, sess, arg_adv, arg_loss, arg_opt, arg_cdna, arg_attention):
         self.sess = sess
 
         self.img_ph = tf.placeholder(
             tf.float32,
-            [None, IMG_WIDTH, IMG_HEIGHT, 3 * HISTORY_LENGTH],
+            [BATCH_SIZE, IMG_WIDTH, IMG_HEIGHT, 3 * HISTORY_LENGTH],
             name='current_frame')
         self.next_frame_ph = tf.placeholder(
             tf.float32,
-            [None, IMG_WIDTH, IMG_HEIGHT, 3],
+            [BATCH_SIZE, IMG_WIDTH, IMG_HEIGHT, 3],
             name='next_frame')
         self.action_ph = tf.placeholder(
             tf.float32,
-            [None, 10],
+            [BATCH_SIZE, 10],
             name='action')
 
         reshaped_actions = tf.reshape(self.action_ph, [tf.shape(self.action_ph)[0], 1, 1, 10])
@@ -433,8 +68,8 @@ class Trainer():
             self.g_out = tf.multiply(self.mask, self.foreground) + tf.multiply(negative_mask, self.background)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
-        elif arg_residual:
-            self.g_out = build_generator_residual(self.img_ph, reshaped_actions)
+        elif arg_cdna:
+            self.g_out = build_generator_cdna(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
         else:
@@ -452,10 +87,9 @@ class Trainer():
             reuse=True)
 
         g_psnr = build_psnr(self.next_frame_ph, self.g_next_frame)
-        # g_l2_loss = tf.losses.mean_squared_error(
-        #     self.g_out, gt_output)
         g_l2_loss = tf.norm(self.g_out - gt_output, ord=1, axis=None, keep_dims=False, name='l1_difference')
-        if arg_residual:
+
+        if arg_cdna:
             g_l2_loss *= 1
 
         if arg_adv:
@@ -474,7 +108,7 @@ class Trainer():
             lr = 5e-5
         else:
             optimizer = tf.train.AdamOptimizer
-            lr = 5e-4
+            lr = 1e-3
 
         self.g_opt_op = optimizer(
             lr,
@@ -535,7 +169,7 @@ class Trainer():
         return gen_next_frames, summ
 
 
-def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt, arg_residual, arg_attention):
+def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt, arg_cdna, arg_attention):
     img_data_train, action_data_train = load_tfrecord.build_tfrecord_input(
         BATCH_SIZE,
         input_path,
@@ -548,7 +182,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
     action_data_test = tf.squeeze(action_data_test[:,0,:])
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
-        trainer = Trainer(sess, arg_adv, arg_loss, arg_opt, arg_residual, arg_attention)
+        trainer = Trainer(sess, arg_adv, arg_loss, arg_opt, arg_cdna, arg_attention)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
         writer = tf.summary.FileWriter(
@@ -563,7 +197,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
             D_per_G = 1
 
         for i in range(60000):
-            if i < 50:
+            if i < 2:
                 input_batch, next_frame_batch, action_batch = get_batch(
                     sess,
                     img_data_train,
@@ -605,7 +239,7 @@ if __name__ == '__main__':
     parser.add_argument('--adv', action='store_true')
     parser.add_argument('--loss', type=str, default='wass')
     parser.add_argument('--opt', type=str, default='rmsprop')
-    parser.add_argument('--residual', action='store_true')
+    parser.add_argument('--cdna', action='store_true')
     parser.add_argument('--attention', action='store_true')
     args = parser.parse_args()
     output_path = os.path.join(args.output_path, 'train_output')
@@ -622,5 +256,5 @@ if __name__ == '__main__':
           args.adv,
           args.loss,
           args.opt,
-          args.residual,
+          args.cdna,
           args.attention)
