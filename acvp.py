@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import os
 import argparse
 import random
-import load_tfrecord
 from utils import *
 
 np.random.seed(7)
@@ -166,11 +165,11 @@ class Trainer():
 
 
 def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt, arg_cdna, arg_attention):
-    img_data_train, action_data_train = load_tfrecord.build_tfrecord_input(
+    img_data_train, action_data_train = build_tfrecord_input(
         BATCH_SIZE,
         input_path,
         1 + HISTORY_LENGTH, .7, True)
-    img_data_test, action_data_test = load_tfrecord.build_tfrecord_input(
+    img_data_test, action_data_test = build_tfrecord_input(
         BATCH_SIZE,
         input_path,
         1 + HISTORY_LENGTH, .7, True, training=False)
