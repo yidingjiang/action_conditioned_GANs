@@ -37,10 +37,6 @@ def build_d_loss(d_out_direct, d_out_gen, arg_loss):
     return d_direct_loss + d_gen_loss
 
 
-def build_psnr(true, pred):
-    return 10.0 * tf.log(1.0 / tf.losses.mean_squared_error(true, pred)) / tf.log(10.0)
-
-
 class Trainer():
     def __init__(self, sess, arg_adv, arg_loss, arg_opt, arg_cdna, arg_attention):
         self.sess = sess
