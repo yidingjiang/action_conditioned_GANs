@@ -192,7 +192,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
             D_per_G = 1
 
         for i in range(60000):
-            if i < 2:
+            if i < 20:
                 input_batch, next_frame_batch, action_batch = get_batch(
                     sess,
                     img_data_train,

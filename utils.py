@@ -186,7 +186,7 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
             padding='SAME',
             reuse=reuse)
 
-        out = tf.nn.softmax(out, dim=-1, name=None)
+        #out = tf.nn.softmax(out, dim=-1, name=None)
         input_extracted = tf.extract_image_patches(images,
                                                     ksizes=[1, ksize, ksize, 1],
                                                     strides=[1, 1, 1, 1],
