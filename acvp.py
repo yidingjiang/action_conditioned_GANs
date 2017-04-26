@@ -37,7 +37,7 @@ def build_d_loss(d_out_direct, d_out_gen, arg_loss):
 
 
 class Trainer():
-    def __init__(self, sess, arg_adv, arg_loss, arg_opt, arg_cdna, arg_attention):
+    def __init__(self, sess, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention):
         self.sess = sess
 
         self.img_ph = tf.placeholder(
@@ -63,8 +63,8 @@ class Trainer():
             self.g_out = tf.multiply(self.mask, self.foreground) + tf.multiply(negative_mask, self.background)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
-        elif arg_cdna:
-            self.g_out = build_generator_cdna(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE)
+        elif arg_transform:
+            self.g_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
         else:
@@ -84,7 +84,7 @@ class Trainer():
         g_psnr = build_psnr(self.next_frame_ph, self.g_next_frame)
         g_l2_loss = tf.norm(self.g_out - gt_output, ord=1, axis=None, keep_dims=False, name='l1_difference')
 
-        if arg_cdna:
+        if arg_transform:
             g_l2_loss *= 1
 
         if arg_adv:
@@ -164,7 +164,7 @@ class Trainer():
         return gen_next_frames, summ
 
 
-def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt, arg_cdna, arg_attention):
+def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention):
     img_data_train, action_data_train = build_tfrecord_input(
         BATCH_SIZE,
         input_path,
@@ -177,7 +177,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
     action_data_test = tf.squeeze(action_data_test[:,0,:])
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
-        trainer = Trainer(sess, arg_adv, arg_loss, arg_opt, arg_cdna, arg_attention)
+        trainer = Trainer(sess, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
         writer = tf.summary.FileWriter(
@@ -234,7 +234,7 @@ if __name__ == '__main__':
     parser.add_argument('--adv', action='store_true')
     parser.add_argument('--loss', type=str, default='wass')
     parser.add_argument('--opt', type=str, default='rmsprop')
-    parser.add_argument('--cdna', action='store_true')
+    parser.add_argument('--transform', action='store_true')
     parser.add_argument('--attention', action='store_true')
     args = parser.parse_args()
     output_path = os.path.join(args.output_path, 'train_output')
@@ -251,5 +251,5 @@ if __name__ == '__main__':
           args.adv,
           args.loss,
           args.opt,
-          args.cdna,
+          args.transform,
           args.attention)

@@ -103,7 +103,7 @@ def cdna_transformation(prev_image, cdna_input, num_masks, color_channels):
 
 
 
-def build_generator_cdna(images, actions, batch_size, reuse=False, color_channels=3, num_masks=1):
+def build_generator_transform(images, actions, batch_size, reuse=False, color_channels=3, num_masks=1, ksize=5):
     with tf.variable_scope('g', reuse=reuse):
         out = slim.conv2d(
             images,
@@ -158,7 +158,7 @@ def build_generator_cdna(images, actions, batch_size, reuse=False, color_channel
             reuse=reuse)
         out = slim.conv2d_transpose(
             out,
-            64,
+            128,
             [5, 5],
             activation_fn=tf.nn.relu,
             stride=2,
@@ -168,19 +168,24 @@ def build_generator_cdna(images, actions, batch_size, reuse=False, color_channel
             reuse=reuse)
         out = slim.conv2d_transpose(
             out,
-            32,
+            ksize*ksize,
             [5, 5],
-            activation_fn=tf.nn.relu,
+            activation_fn=None,
             stride=2,
             scope='tconv3',
             padding='SAME',
-            normalizer_fn=slim.batch_norm,
             reuse=reuse)
-        print(out.get_shape())
-        cdna_input = tf.reshape(out, [int(batch_size), -1])
-        print(cdna_input.get_shape())
-        transformed = cdna_transformation(images, cdna_input, num_masks, color_channels)
-    return tf.squeeze(transformed)
+
+        out = tf.nn.softmax(out, dim=-1, name=None)
+        input_extracted = tf.extract_image_patches(images,
+                                                    ksizes=[1, ksize, ksize, 1],
+                                                    strides=[1, 1, 1, 1],
+                                                    rates=[1, 1, 1, 1],
+                                                    padding='SAME')
+        out *= input_extracted
+        out = tf.reduce_mean(out, 3)
+
+    return out
 
 def build_generator(images, actions, reuse=False):
     with tf.variable_scope('g', reuse=reuse):
