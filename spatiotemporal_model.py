@@ -163,22 +163,22 @@ class Model():
             training=True,
             name='bn6')
         out = Deconvolution3D(
-            25,
+            15 * 15,
             [4, 1, 1],
             strides=[2, 1, 1],
             activation='relu',
             padding='same',
-            output_shape=[None, 8, 64, 64, 25],
+            output_shape=[None, 8, 64, 64, 225],
             name='tconv3')(out)
 
         prev_frame = img_input[:,1,:,:,:]
         patches = tf.extract_image_patches(
             prev_frame,
-            ksizes=[1, 5, 5, 1],
+            ksizes=[1, 15, 15, 1],
             strides=[1, 1, 1, 1],
             rates=[1, 1, 1, 1],
             padding='SAME')
-        patches = tf.reshape(patches, [batch_size, 64, 64, 25, 3])
+        patches = tf.reshape(patches, [batch_size, 64, 64, 225, 3])
 
         output_frames = []
         for i in range(8):
