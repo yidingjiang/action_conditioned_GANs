@@ -218,6 +218,7 @@ if __name__ == '__main__':
             g_loss, seq, g_out = m.train_g(output=(i%100==0))
             d_loss, summ = m.train_d(summarize=(i%100==0))
             if i % 100 == 0:
+                print('Iteration {:d}'.format(i))
                 save_samples(train_output_path, seq, g_out, i)
                 train_writer.add_summary(summ, i)
                 train_writer.flush()
