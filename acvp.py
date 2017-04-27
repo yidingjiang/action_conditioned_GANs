@@ -64,7 +64,7 @@ class Trainer():
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
         elif arg_transform:
-            self.g_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE)
+            self.g_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE, ksize=6)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
         else:
@@ -89,7 +89,7 @@ class Trainer():
 
         if arg_adv:
             g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
-            self.g_loss = 0.2*g_l2_loss + g_adv_loss
+            self.g_loss = 0.001*g_l2_loss + g_adv_loss
         else:
             self.g_loss = g_l2_loss
 

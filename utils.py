@@ -195,6 +195,8 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
         print(input_extracted.get_shape())
         input_extracted = tf.reshape(input_extracted, 
                                         [batch_size, 64, 64, ksize*ksize, 3])
+        # out = tf.nn.l2_normalize(out, 3)
+        out /= tf.reduce_sum(out, [3], keep_dims=True)
         out = tf.stack([out]*3, axis=4)
         out *= input_extracted
         out = tf.reduce_mean(out, 3)
@@ -576,7 +578,7 @@ def build_tfrecord_input(batch_size,
 
   image_seq, state_seq, action_seq = [], [], []
 
-  for i in range(0, 8, 7):
+  for i in range(0, 7, 6):
     image_name = 'move/' + str(i) + '/image/encoded'
     action_name = 'move/' + str(i) + '/commanded_pose/vec_pitch_yaw'
     state_name = 'move/' + str(i) + '/endeffector/vec_pitch_yaw'
