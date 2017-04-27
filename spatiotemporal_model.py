@@ -44,11 +44,11 @@ class Model():
         g_adv_loss = tf.losses.sigmoid_cross_entropy(
             tf.ones_like(self.d_gen), self.d_gen)
         if arg_g_loss == 'l1':
-            self.d_loss = g_lp_loss
+            self.g_loss = g_lp_loss
         elif arg_g_loss == 'adv':
-            self.d_loss = g_adv_loss
+            self.g_loss = g_adv_loss
         else:
-            self.d_loss = g_lp_loss + g_adv_loss
+            self.g_loss = g_lp_loss + g_adv_loss
         d_real_loss = tf.losses.sigmoid_cross_entropy(
             0.9 * tf.ones_like(self.d_real), self.d_real)
         d_gen_loss = tf.losses.sigmoid_cross_entropy(
