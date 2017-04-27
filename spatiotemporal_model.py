@@ -11,13 +11,8 @@ from utils import lrelu, build_tfrecord_input, save_samples
 class Model():
     def __init__(self, sess, sequence, arg_g_loss):
         self.sess = sess
-        '''
-        sequence = tf.placeholder(
-            tf.float32,
-            [None, 20, 64, 64, 3])
-        '''
         self.sequence = sequence
-        input_images = self.sequence[:,:4,:,:,:]
+        input_images = self.sequence[:,:2,:,:,:]
 
         with tf.variable_scope('g'):
             self.g_out = self._build_generator(input_images)
@@ -92,11 +87,11 @@ class Model():
 
     def _build_d_conv_layers(self):
         d_conv_specs=[
-            (32, [1, 3, 3], [1, 2, 2]),
-            (64, [2, 3, 3], [2, 2, 2]),
-            (128, [2, 3, 3], [2, 2, 2]),
-            (256, [2, 3, 3], [2, 2, 2]),
-            (1, [2, 3, 3], [1, 1, 1])
+            (32, [3, 3, 3], [2, 2, 2]),
+            (64, [3, 3, 3], [2, 2, 2]),
+            (128, [3, 3, 3], [2, 2, 2]),
+            (256, [3, 3, 3], [2, 2, 2]),
+            (1, [1, 4, 4], [1, 1, 1])
         ]
         d_conv_layers = []
         for i, spec in enumerate(d_conv_specs):
@@ -105,6 +100,7 @@ class Model():
                 spec[1],
                 strides=spec[2],
                 activation=lrelu if i < len(d_conv_specs) - 1 else None,
+                padding='same' if i < len(d_conv_specs) -1 else 'valid',
                 name='conv{:d}'.format(i))
             d_conv_layers.append(layer)
         return d_conv_layers
@@ -130,7 +126,7 @@ class Model():
             (64, [1, 3, 3]),
             (128, [1, 3, 3]),
             (256, [1, 3, 3]),
-            (32, [4, 1, 1])
+            (32, [2, 1, 1])
         ]
         out = img_input
         for i, spec in enumerate(conv_specs):
@@ -146,9 +142,9 @@ class Model():
                 name='bn{:d}'.format(i))
         out = Deconvolution3D(
             32,
-            [4, 1, 1],
+            [2, 1, 1],
             activation='relu',
-            output_shape=[None, 4, 64, 64, 32],
+            output_shape=[None, 2, 64, 64, 32],
             name='tconv1')(out)
         out = tf.layers.batch_normalization(
             out,
@@ -160,7 +156,7 @@ class Model():
             strides=[2, 1, 1],
             activation='relu',
             padding='same',
-            output_shape=[None, 8, 64, 64, 32],
+            output_shape=[None, 4, 64, 64, 32],
             name='tconv2')(out)
         out = tf.layers.batch_normalization(
             out,
@@ -172,20 +168,20 @@ class Model():
             strides=[2, 1, 1],
             activation='relu',
             padding='same',
-            output_shape=[None, 16, 64, 64, 25],
+            output_shape=[None, 8, 64, 64, 25],
             name='tconv3')(out)
 
-        output_frames = []
-        for i in range(16):
-            prev_frame = output_frames[-1] if len(output_frames) else img_input[:,1,:,:,:]
-            patches = tf.extract_image_patches(
-                prev_frame,
-                ksizes=[1, 5, 5, 1],
-                strides=[1, 1, 1, 1],
-                rates=[1, 1, 1, 1],
-                padding='SAME')
-            patches = tf.reshape(patches, [batch_size, 64, 64, 25, 3])
+        prev_frame = img_input[:,1,:,:,:]
+        patches = tf.extract_image_patches(
+            prev_frame,
+            ksizes=[1, 5, 5, 1],
+            strides=[1, 1, 1, 1],
+            rates=[1, 1, 1, 1],
+            padding='SAME')
+        patches = tf.reshape(patches, [batch_size, 64, 64, 25, 3])
 
+        output_frames = []
+        for i in range(8):
             normalized_transform = tf.nn.l2_normalize(out[:,i,:,:,:], dim=3)
             repeated_transform = tf.stack(3 * [normalized_transform], axis=4)
             frame_i = tf.reduce_sum(repeated_transform * patches, axis=3)
@@ -213,7 +209,7 @@ if __name__ == '__main__':
     sequence, actions = build_tfrecord_input(
         args.batch_size,
         args.input_path,
-        20, .95, True)
+        10, .95, True)
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
         m = Model(sess, sequence, args.g_loss)
