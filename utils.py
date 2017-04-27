@@ -180,7 +180,7 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
             out,
             ksize*ksize,
             [5, 5],
-            activation_fn=None,
+            activation_fn=tf.nn.relu,
             stride=2,
             scope='tconv4',
             padding='SAME',
@@ -194,12 +194,12 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
                                                     padding='SAME')
         print(input_extracted.get_shape())
         input_extracted = tf.reshape(input_extracted, 
-                                        [batch_size, 64, 64, ksize*ksize, 3])
-        # out = tf.nn.l2_normalize(out, 3)
-        out /= tf.reduce_sum(out, [3], keep_dims=True)
+                                       [batch_size, 64, 64, ksize*ksize, 3])
+        out = tf.nn.l2_normalize(out, 3)
+        #out /= tf.reduce_sum(out, [3], keep_dims=True)
         out = tf.stack([out]*3, axis=4)
         out *= input_extracted
-        out = tf.reduce_mean(out, 3)
+        out = tf.reduce_sum(out, 3)
 
     return out
 

@@ -89,7 +89,7 @@ class Trainer():
 
         if arg_adv:
             g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
-            self.g_loss = 0.001*g_l2_loss + g_adv_loss
+            self.g_loss = 0.01*g_l2_loss + g_adv_loss
         else:
             self.g_loss = g_l2_loss
 
