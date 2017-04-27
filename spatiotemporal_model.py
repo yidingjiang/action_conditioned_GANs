@@ -204,7 +204,7 @@ if __name__ == '__main__':
     sequence, actions = build_tfrecord_input(
         args.batch_size,
         args.input_path,
-        20, 1, True)
+        20, .95, True)
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
         m = Model(sess, sequence)
@@ -219,7 +219,7 @@ if __name__ == '__main__':
             d_loss, summ = m.train_d(summarize=(i%100==0))
             if i % 100 == 0:
                 save_samples(train_output_path, seq, g_out, i)
-                train_writer.add_summary(summ)
+                train_writer.add_summary(summ, i)
                 train_writer.flush()
             if i % 500 == 0:
                 saver.save(sess, os.path.join(model_dir, 'model{:d}'.format(i)))
