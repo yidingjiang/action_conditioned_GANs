@@ -15,13 +15,11 @@ def get_batch(sess, img_tensor, action_state_tensor, batch_size):
     return img[:,0,:,:,:], img[:,1,:,:,:], action
 
 
-def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
+def save_samples(output_path, input_sample, generated_sample, sample_number):
     input_sample = (255. / 2) * (input_sample + 1.)
     input_sample = input_sample.astype(np.uint8)
     generated_sample = (255. / 2) * (generated_sample + 1.)
     generated_sample = generated_sample.astype(np.uint8)
-    gt = (255. / 2) * (gt + 1.)
-    gt = gt.astype(np.uint8)
     save_folder =  os.path.join(
         output_path,
         'sample{:d}'.format(sample_number))
@@ -32,19 +30,14 @@ def save_samples(output_path, input_sample, generated_sample, gt, sample_number)
         if not os.path.exists(vid_folder):
             os.makedirs(vid_folder)
         vid = input_sample[i]
-        for j in range(int(vid.shape[2] / 3)):
+        for j in range(vid.shape[0]):
             save_path = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
+            frame = vid[j,:,:,:]
             plt.imsave(save_path, frame[:,:,::-1])
         vid = generated_sample[i]
-        for j in range(int(vid.shape[2] / 3)):
+        for j in range(vid.shape[0]):
             save_path = os.path.join(vid_folder, 'generated{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
-            plt.imsave(save_path, frame[:,:,::-1])
-        vid = gt[i]
-        for j in range(int(vid.shape[2] / 3)):
-            save_path = os.path.join(vid_folder, 'ground_truth{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
+            frame = vid[j,:,:,:]
             plt.imsave(save_path, frame[:,:,::-1])
 
 

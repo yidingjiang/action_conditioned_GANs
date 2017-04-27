@@ -1,10 +1,11 @@
 import argparse
+import os
 import tensorflow as tf
 import numpy as np
 from keras.layers.convolutional import Conv3D
 from keras.layers.normalization import BatchNormalization
 from keras_contrib.layers.convolutional import Deconvolution3D
-from utils import lrelu, build_tfrecord_input
+from utils import lrelu, build_tfrecord_input, save_samples
 
 
 class Model():
@@ -15,18 +16,20 @@ class Model():
             tf.float32,
             [None, 20, 64, 64, 3])
         '''
-        input_images = sequence[:,:4,:,:,:]
+        self.sequence = sequence
+        input_images = self.sequence[:,:4,:,:,:]
 
         with tf.variable_scope('g'):
             self.g_out = self._build_generator(input_images)
         with tf.variable_scope('d'):
             d_conv_layers = self._build_d_conv_layers()
-            self.d_real = self._build_discriminator(sequence, d_conv_layers)
+            self.d_real = self._build_discriminator(self.sequence, d_conv_layers)
         with tf.variable_scope('d', reuse=True):
             self.d_gen = self._build_discriminator(self.g_out, d_conv_layers)
 
         self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g')
         self.d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd')
+        # self.clip_d = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in self.d_vars]
         # Batch norm update ops
         self.g_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, 'g')
         self.d_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, 'd')
@@ -39,6 +42,16 @@ class Model():
         d_gen_loss = tf.losses.sigmoid_cross_entropy(
             tf.zeros_like(self.d_gen), self.d_gen)
         self.d_loss = d_real_loss + d_gen_loss
+        g_lp_loss = tf.norm(
+            self.g_out - self.sequence,
+            ord=1,
+            axis=None,
+            keep_dims=False,
+            name='lp_difference')
+        tf.summary.scalar('g_loss', self.g_loss)
+        tf.summary.scalar('g_lp_loss', g_lp_loss)
+        tf.summary.scalar('d_real_loss', d_real_loss)
+        tf.summary.scalar('d_gen_loss', d_gen_loss)
 
         # Make batch norm updates dependencies of optimization ops
         with tf.control_dependencies(self.g_update_ops):
@@ -48,15 +61,25 @@ class Model():
             self.d_opt_op = tf.train.AdamOptimizer(1e-3, name='d_opt').minimize(
                 self.d_loss, var_list=self.d_vars)
 
-
-    def train_g(self):
-        _, g_loss = self.sess.run([self.g_opt_op, self.g_loss])
-        return g_loss
+        self.merged_summaries = tf.summary.merge_all()
 
 
-    def train_d(self):
-        _, d_loss = self.sess.run([self.d_opt_op, self.d_loss])
-        return d_loss
+    def train_g(self, output=False):
+        if output:
+            _, g_loss, seq, g_out = self.sess.run([self.g_opt_op, self.g_loss, self.sequence, self.g_out])
+            return g_loss, seq, g_out
+        else:
+            _, g_loss = self.sess.run([self.g_opt_op, self.g_loss])
+            return g_loss, None, None
+
+
+    def train_d(self, summarize=False):
+        if summarize:
+            _, d_loss, summ = self.sess.run([self.d_opt_op, self.d_loss, self.merged_summaries])
+            return d_loss, summ
+        else:
+            _, d_loss = self.sess.run([self.d_opt_op, self.d_loss])
+            return d_loss, None
 
 
     def _build_d_conv_layers(self):
@@ -169,17 +192,34 @@ class Model():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('input_path', type=str)
-    parser.add_argument('--batch_size', type=int, default=8)
+    parser.add_argument('output_path', type=str)
+    parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--iterations', type=int, default=10000)
     args = parser.parse_args()
-    sequence, actions = build_tfrecord_input(4, args.input_path, 20, 1, True)
+    train_output_path = os.path.join(args.output_path, 'train_output')
+    model_dir = os.path.join(args.output_path, 'models')
+    log_dir = os.path.join(args.output_path, 'logs')
+    os.makedirs(args.output_path)
+    os.makedirs(model_dir)
+    sequence, actions = build_tfrecord_input(
+        args.batch_size,
+        args.input_path,
+        20, 1, True)
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
         m = Model(sess, sequence)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
+        train_writer = tf.summary.FileWriter(
+            os.path.join(log_dir, 'train'), sess.graph)
+        saver = tf.train.Saver()
         print('Model construction completed.')
         for i in range(args.iterations):
-            g_loss = m.train_g()
-            d_loss = m.train_d()
-            print('Iteration {:d}: {:2f} {:2f}'.format(i, g_loss, d_loss))
+            g_loss, seq, g_out = m.train_g(output=(i%100==0))
+            d_loss, summ = m.train_d(summarize=(i%100==0))
+            if i % 100 == 0:
+                save_samples(train_output_path, seq, g_out, i)
+                train_writer.add_summary(summ)
+                train_writer.flush()
+            if i % 500 == 0:
+                saver.save(sess, os.path.join(model_dir, 'model{:d}'.format(i)))
