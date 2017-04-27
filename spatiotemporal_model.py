@@ -9,7 +9,7 @@ from utils import lrelu, build_tfrecord_input, save_samples
 
 
 class Model():
-    def __init__(self, sess, sequence):
+    def __init__(self, sess, sequence, arg_g_loss):
         self.sess = sess
         '''
         sequence = tf.placeholder(
@@ -35,23 +35,31 @@ class Model():
         self.d_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, 'd')
 
         # Define loss for both d and g
-        self.g_loss = tf.losses.sigmoid_cross_entropy(
-            tf.ones_like(self.d_gen), self.d_gen)
-        d_real_loss = tf.losses.sigmoid_cross_entropy(
-            0.9 * tf.ones_like(self.d_real), self.d_real)
-        d_gen_loss = tf.losses.sigmoid_cross_entropy(
-            tf.zeros_like(self.d_gen), self.d_gen)
-        self.d_loss = d_real_loss + d_gen_loss
         g_lp_loss = tf.norm(
             self.g_out - self.sequence,
             ord=1,
             axis=None,
             keep_dims=False,
             name='lp_difference')
+        g_adv_loss = tf.losses.sigmoid_cross_entropy(
+            tf.ones_like(self.d_gen), self.d_gen)
+        if arg_g_loss == 'l1':
+            self.d_loss = g_lp_loss
+        elif arg_g_loss == 'adv':
+            self.d_loss = g_adv_loss
+        else:
+            self.d_loss = g_lp_loss + g_adv_loss
+        d_real_loss = tf.losses.sigmoid_cross_entropy(
+            0.9 * tf.ones_like(self.d_real), self.d_real)
+        d_gen_loss = tf.losses.sigmoid_cross_entropy(
+            tf.zeros_like(self.d_gen), self.d_gen)
+        self.d_loss = d_real_loss + d_gen_loss
         tf.summary.scalar('g_loss', self.g_loss)
         tf.summary.scalar('g_lp_loss', g_lp_loss)
+        tf.summary.scalar('g_adv_loss', g_adv_loss)
         tf.summary.scalar('d_real_loss', d_real_loss)
         tf.summary.scalar('d_gen_loss', d_gen_loss)
+        tf.summary.scalar('d_loss', self.d_loss)
 
         # Make batch norm updates dependencies of optimization ops
         with tf.control_dependencies(self.g_update_ops):
@@ -167,17 +175,17 @@ class Model():
             output_shape=[None, 16, 64, 64, 25],
             name='tconv3')(out)
 
-        prev_frame = img_input[:,1,:,:,:]
-        patches = tf.extract_image_patches(
-            prev_frame,
-            ksizes=[1, 5, 5, 1],
-            strides=[1, 1, 1, 1],
-            rates=[1, 1, 1, 1],
-            padding='SAME')
-        patches = tf.reshape(patches, [batch_size, 64, 64, 25, 3])
-
         output_frames = []
         for i in range(16):
+            prev_frame = output_frames[-1] if len(output_frames) else img_input[:,1,:,:,:]
+            patches = tf.extract_image_patches(
+                prev_frame,
+                ksizes=[1, 5, 5, 1],
+                strides=[1, 1, 1, 1],
+                rates=[1, 1, 1, 1],
+                padding='SAME')
+            patches = tf.reshape(patches, [batch_size, 64, 64, 25, 3])
+
             normalized_transform = tf.nn.l2_normalize(out[:,i,:,:,:], dim=3)
             repeated_transform = tf.stack(3 * [normalized_transform], axis=4)
             frame_i = tf.reduce_sum(repeated_transform * patches, axis=3)
@@ -193,6 +201,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('input_path', type=str)
     parser.add_argument('output_path', type=str)
+    parser.add_argument('--g_loss', type=str, default='l1')
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--iterations', type=int, default=10000)
     args = parser.parse_args()
@@ -207,7 +216,7 @@ if __name__ == '__main__':
         20, .95, True)
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
-        m = Model(sess, sequence)
+        m = Model(sess, sequence, args.g_loss)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
         train_writer = tf.summary.FileWriter(
