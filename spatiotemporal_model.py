@@ -30,15 +30,12 @@ class Model():
         self.d_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, 'd')
 
         # Define loss for both d and g
-        g_lp_loss = tf.norm(
-            self.g_out - self.sequence,
-            ord=1,
-            axis=None,
-            keep_dims=False,
-            name='lp_difference')
+        l_ord = 2
+        g_lp_loss = tf.reduce_mean(tf.reduce_sum(
+            tf.abs(self.g_out - self.sequence)**l_ord, axis=[1, 2, 3, 4]))
         g_adv_loss = tf.losses.sigmoid_cross_entropy(
             tf.ones_like(self.d_gen), self.d_gen)
-        if arg_g_loss == 'l1':
+        if arg_g_loss == 'l2':
             self.g_loss = g_lp_loss
         elif arg_g_loss == 'adv':
             self.g_loss = g_adv_loss
@@ -120,6 +117,7 @@ class Model():
 
 
     def _build_generator(self, img_input):
+        ksize = 10
         batch_size = tf.shape(img_input)[0]
         conv_specs = [
             (32, [1, 3, 3]),
@@ -163,26 +161,27 @@ class Model():
             training=True,
             name='bn6')
         out = Deconvolution3D(
-            15 * 15,
+            ksize * ksize,
             [4, 1, 1],
             strides=[2, 1, 1],
-            activation='relu',
+            activation=None,
             padding='same',
-            output_shape=[None, 8, 64, 64, 225],
+            output_shape=[None, 8, 64, 64, ksize * ksize],
             name='tconv3')(out)
 
         prev_frame = img_input[:,1,:,:,:]
         patches = tf.extract_image_patches(
             prev_frame,
-            ksizes=[1, 15, 15, 1],
+            ksizes=[1, ksize, ksize, 1],
             strides=[1, 1, 1, 1],
             rates=[1, 1, 1, 1],
             padding='SAME')
-        patches = tf.reshape(patches, [batch_size, 64, 64, 225, 3])
+        patches = tf.reshape(patches, [batch_size, 64, 64, ksize * ksize, 3])
 
         output_frames = []
         for i in range(8):
-            normalized_transform = tf.nn.l2_normalize(out[:,i,:,:,:], dim=3)
+            #normalized_transform = tf.nn.l2_normalize(out[:,i,:,:,:], dim=3)
+            normalized_transform = tf.nn.softmax(out[:,i,:,:,:], dim=-1)
             repeated_transform = tf.stack(3 * [normalized_transform], axis=4)
             frame_i = tf.reduce_sum(repeated_transform * patches, axis=3)
             output_frames.append(frame_i)
@@ -197,7 +196,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('input_path', type=str)
     parser.add_argument('output_path', type=str)
-    parser.add_argument('--g_loss', type=str, default='l1')
+    parser.add_argument('--g_loss', type=str, default='l2')
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--iterations', type=int, default=10000)
     args = parser.parse_args()
