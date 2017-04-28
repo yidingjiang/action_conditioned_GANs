@@ -264,13 +264,13 @@ if __name__ == '__main__':
             d_loss, summ = m.train_d(seq_batch, actions_batch, summarize=(i%100==0))
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
-                save_samples(train_output_path, seq_batch, g_out, i)
+                save_samples(train_output_path, seq_batch[:5], g_out[:5], i)
                 train_writer.add_summary(summ, i)
                 train_writer.flush()
                 test_seq_batch = sess.run(test_sequence)[:,idx:idx+6,:,:,:]
                 test_actions_batch = sess.run(test_actions)[:,idx:idx+6,:]
                 test_g_out, test_summ = m.test_batch(test_seq_batch, test_actions_batch)
-                save_samples(test_output_path, test_seq_batch, test_g_out, i)
+                save_samples(test_output_path, test_seq_batch[:5], test_g_out[:5], i)
                 test_writer.add_summary(test_summ, i)
                 test_writer.flush()
             if i % 500 == 0:
