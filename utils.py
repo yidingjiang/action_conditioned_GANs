@@ -180,7 +180,7 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
             out,
             ksize*ksize,
             [5, 5],
-            activation_fn=tf.nn.relu,
+            activation_fn=None,
             stride=2,
             scope='tconv4',
             padding='SAME',
