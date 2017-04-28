@@ -207,12 +207,26 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                     img_data_train,
                     action_data_train,
                     BATCH_SIZE)
-                make_summ = (i % 100 == 0) and (j==D_per_G-1)
-                summ = trainer.train_d(input_batch, next_frame_batch, action_batch, summarize=make_summ)
-            gen_next_frames = trainer.train_g(input_batch, next_frame_batch, action_batch)
+
+                make_summ = (i % 100 == 0) and (j == D_per_G-1)
+
+                start = np.random.choice(len(input_batch)-2, 1)
+                end = start+2
+                summ = trainer.train_d(input_batch[:,start_index:end,:,:,:],
+                                        next_frame_batch[:,start_index:end,:,:,:],
+                                        action_batch[:,start_index:end,:],
+                                        summarize=make_summ)
+
+            gen_next_frames = trainer.train_g(input_batch[:,start_index:end,:,:,:],
+                                                next_frame_batch[:,start_index:end,:,:,:],
+                                                action_batch[:,start_index:end,:])
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
-                save_samples(output_path, input_batch, gen_next_frames, next_frame_batch, i)
+                save_samples(output_path,
+                            input_batch[:8,start_index:end,:,:,:],
+                            gen_next_frames[:8,start_index:end,:,:,:],
+                            next_frame_batch[:8,start_index:end,:,:,:],
+                            i)
                 saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
                 writer.add_summary(summ, i)
                 writer.flush()
@@ -222,7 +236,16 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                     img_data_test,
                     action_data_test,
                     BATCH_SIZE)
-                test_output, test_summ = trainer.test(test_input, test_next_frame, test_actions)
+
+                predicted = []
+
+                for j in range(test_input.shape[1]-1):
+                    test_output, test_summ = trainer.test(test_input[:,j,:,:,:],
+                                                            test_next_frame[:,j,:,:,:],
+                                                            test_actions[:,j,:])
+                    predicted.append(test_output)
+
+                test_output = np.concatenate(predicted, axis=-1)
                 save_samples(test_output_path, test_input, test_output, test_next_frame, i)
                 test_writer.add_summary(test_summ, i)
 
