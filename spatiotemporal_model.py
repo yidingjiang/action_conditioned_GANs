@@ -9,9 +9,10 @@ from utils import lrelu, build_tfrecord_input, save_samples
 
 
 class Model():
-    def __init__(self, sess, sequence, actions, arg_g_loss, arg_actions):
+    def __init__(self, sess, arg_g_loss, arg_actions):
         self.sess = sess
-        self.sequence = sequence
+        self.sequence = tf.placeholder(tf.float32, [None, 10, 64, 64, 3], name='sequence_ph')
+        self.actions = tf.placeholder(tf.float32, [None, 10, 10], name='actions_ph')
         input_images = self.sequence[:,:2,:,:,:]
         tiled_actions = None
         d_actions = None
@@ -76,22 +77,47 @@ class Model():
         self.merged_summaries = tf.summary.merge_all()
 
 
-    def train_g(self, output=False):
+    def train_g(self, sequence, actions, output=False):
+        feed_dict = {
+            self.sequence: sequence,
+            self.actions: actions
+        }
         if output:
-            _, g_loss, seq, g_out = self.sess.run([self.g_opt_op, self.g_loss, self.sequence, self.g_out])
-            return g_loss, seq, g_out
+            _, g_loss, g_out = self.sess.run(
+                [self.g_opt_op, self.g_loss, self.g_out],
+                feed_dict=feed_dict)
+            return g_loss, g_out
         else:
-            _, g_loss = self.sess.run([self.g_opt_op, self.g_loss])
-            return g_loss, None, None
+            _, g_loss = self.sess.run(
+                [self.g_opt_op, self.g_loss],
+                feed_dict=feed_dict)
+            return g_loss, None
 
 
-    def train_d(self, summarize=False):
+    def train_d(self, sequence, actions, summarize=False):
+        feed_dict = {
+            self.sequence: sequence,
+            self.actions: actions
+        }
         if summarize:
-            _, d_loss, summ = self.sess.run([self.d_opt_op, self.d_loss, self.merged_summaries])
+            _, d_loss, summ = self.sess.run(
+                [self.d_opt_op, self.d_loss, self.merged_summaries],
+                feed_dict=feed_dict)
             return d_loss, summ
         else:
-            _, d_loss = self.sess.run([self.d_opt_op, self.d_loss])
+            _, d_loss = self.sess.run(
+                [self.d_opt_op, self.d_loss],
+                feed_dict=feed_dict)
             return d_loss, None
+
+
+    def test_batch(self, sequence, actions):
+        feed_dict = {
+            self.sequence: sequence,
+            self.actions: actions
+        }
+        g_out, summ = self.sess.run([self.g_out, self.merged_summaries], feed_dict=feed_dict)
+        return g_out, summ
 
 
     def _build_d_conv_layers(self):
@@ -218,6 +244,7 @@ if __name__ == '__main__':
     parser.add_argument('--actions', action='store_true')
     args = parser.parse_args()
     train_output_path = os.path.join(args.output_path, 'train_output')
+    test_output_path = os.path.join(args.output_path, 'test_output')
     model_dir = os.path.join(args.output_path, 'models')
     log_dir = os.path.join(args.output_path, 'logs')
     os.makedirs(args.output_path)
@@ -226,22 +253,36 @@ if __name__ == '__main__':
         args.batch_size,
         args.input_path,
         10, .95, True)
+    test_sequence, test_actions = build_tfrecord_input(
+        args.batch_size,
+        args.input_path,
+        10, .95, True, training=False)
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
-        m = Model(sess, sequence, actions, args.g_loss, args.actions)
+        m = Model(sess, args.g_loss, args.actions)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
         train_writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'train'), sess.graph)
+        test_writer = tf.summary.FileWriter(
+            os.path.join(log_dir, 'test'))
         saver = tf.train.Saver()
         print('Model construction completed.')
         for i in range(args.iterations):
-            g_loss, seq, g_out = m.train_g(output=(i%100==0))
-            d_loss, summ = m.train_d(summarize=(i%100==0))
+            seq_batch = sess.run(sequence)
+            actions_batch = sess.run(actions)
+            g_loss, g_out = m.train_g(seq_batch, actions_batch, output=(i%100==0))
+            d_loss, summ = m.train_d(seq_batch, actions_batch, summarize=(i%100==0))
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
-                save_samples(train_output_path, seq, g_out, i)
+                save_samples(train_output_path, seq_batch, g_out, i)
                 train_writer.add_summary(summ, i)
                 train_writer.flush()
+                test_seq_batch = sess.run(test_sequence)
+                test_actions_batch = sess.run(test_actions)
+                test_g_out, test_summ = m.test_batch(test_seq_batch, test_actions_batch)
+                save_samples(test_output_path, test_seq_batch, test_g_out, i)
+                test_writer.add_summary(test_summ, i)
+                test_writer.flush()
             if i % 500 == 0:
                 saver.save(sess, os.path.join(model_dir, 'model{:d}'.format(i)))
