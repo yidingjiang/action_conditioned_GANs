@@ -11,20 +11,20 @@ from utils import lrelu, build_tfrecord_input, save_samples
 class Model():
     def __init__(self, sess, arg_g_loss, arg_actions):
         self.sess = sess
-        self.sequence = tf.placeholder(tf.float32, [None, 10, 64, 64, 3], name='sequence_ph')
-        self.actions = tf.placeholder(tf.float32, [None, 10, 10], name='actions_ph')
+        self.sequence = tf.placeholder(tf.float32, [None, 6, 64, 64, 3], name='sequence_ph')
+        self.actions = tf.placeholder(tf.float32, [None, 6, 10], name='actions_ph')
         input_images = self.sequence[:,:2,:,:,:]
         tiled_actions = None
         d_actions = None
         if arg_actions:
             actions_by_ts = []
-            for i in range(1, 9):
-                actions_by_ts.append(actions[:,i,:])
+            for i in range(1, 5):
+                actions_by_ts.append(self.actions[:,i,:])
             reshaped_actions = tf.concat(
                 axis=1, values=actions_by_ts)[:,None,None, None,:]
             tiled_actions = tf.tile(
                 reshaped_actions, [1, 1, 64, 64, 1])
-            d_actions = tf.tile(actions[:,:,None,None,:], [1, 1, 64, 64, 1])
+            d_actions = tf.tile(self.actions[:,:,None,None,:], [1, 1, 64, 64, 1])
 
         with tf.variable_scope('g'):
             self.g_out = self._build_generator(input_images, tiled_actions)
@@ -122,7 +122,7 @@ class Model():
 
     def _build_d_conv_layers(self):
         d_conv_specs=[
-            (32, [3, 3, 3], [2, 2, 2]),
+            (32, [1, 3, 3], [1, 2, 2]),
             (64, [3, 3, 3], [2, 2, 2]),
             (128, [3, 3, 3], [2, 2, 2]),
             (256, [3, 3, 3], [2, 2, 2]),
@@ -135,7 +135,7 @@ class Model():
                 spec[1],
                 strides=spec[2],
                 activation=lrelu if i < len(d_conv_specs) - 1 else None,
-                padding='same' if i < len(d_conv_specs) -1 else 'valid',
+                padding='same' if i < len(d_conv_specs) - 1 else 'valid',
                 name='conv{:d}'.format(i))
             d_conv_layers.append(layer)
         return d_conv_layers
@@ -191,24 +191,12 @@ class Model():
             training=True,
             name='bn5')
         out = Deconvolution3D(
-            32,
-            [4, 1, 1],
-            strides=[2, 1, 1],
-            activation='relu',
-            padding='same',
-            output_shape=[None, 4, 64, 64, 32],
-            name='tconv2')(out)
-        out = tf.layers.batch_normalization(
-            out,
-            training=True,
-            name='bn6')
-        out = Deconvolution3D(
             ksize * ksize,
             [4, 1, 1],
             strides=[2, 1, 1],
             activation=None,
             padding='same',
-            output_shape=[None, 8, 64, 64, ksize * ksize],
+            output_shape=[None, 4, 64, 64, ksize * ksize],
             name='tconv3')(out)
 
         prev_frame = img_input[:,1,:,:,:]
@@ -221,7 +209,7 @@ class Model():
         patches = tf.reshape(patches, [batch_size, 64, 64, ksize * ksize, 3])
 
         output_frames = []
-        for i in range(8):
+        for i in range(4):
             #normalized_transform = tf.nn.l2_normalize(out[:,i,:,:,:], dim=3)
             normalized_transform = tf.nn.softmax(out[:,i,:,:,:], dim=-1)
             repeated_transform = tf.stack(3 * [normalized_transform], axis=4)
@@ -252,11 +240,11 @@ if __name__ == '__main__':
     sequence, actions = build_tfrecord_input(
         args.batch_size,
         args.input_path,
-        10, .95, True)
+        20, .95, True)
     test_sequence, test_actions = build_tfrecord_input(
         args.batch_size,
         args.input_path,
-        10, .95, True, training=False)
+        20, .95, True, training=False)
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
         m = Model(sess, args.g_loss, args.actions)
@@ -269,8 +257,9 @@ if __name__ == '__main__':
         saver = tf.train.Saver()
         print('Model construction completed.')
         for i in range(args.iterations):
-            seq_batch = sess.run(sequence)
-            actions_batch = sess.run(actions)
+            idx = np.random.choice(14)
+            seq_batch = sess.run(sequence)[:,idx:idx+6,:,:,:]
+            actions_batch = sess.run(actions)[:,idx:idx+6,:]
             g_loss, g_out = m.train_g(seq_batch, actions_batch, output=(i%100==0))
             d_loss, summ = m.train_d(seq_batch, actions_batch, summarize=(i%100==0))
             if i % 100 == 0:
@@ -278,8 +267,8 @@ if __name__ == '__main__':
                 save_samples(train_output_path, seq_batch, g_out, i)
                 train_writer.add_summary(summ, i)
                 train_writer.flush()
-                test_seq_batch = sess.run(test_sequence)
-                test_actions_batch = sess.run(test_actions)
+                test_seq_batch = sess.run(test_sequence)[:,idx:idx+6,:,:,:]
+                test_actions_batch = sess.run(test_actions)[:,idx:idx+6,:]
                 test_g_out, test_summ = m.test_batch(test_seq_batch, test_actions_batch)
                 save_samples(test_output_path, test_seq_batch, test_g_out, i)
                 test_writer.add_summary(test_summ, i)
