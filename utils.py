@@ -186,7 +186,7 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
             padding='SAME',
             reuse=reuse)
 
-        #out = tf.nn.softmax(out, dim=-1, name=None)
+        out = tf.nn.softmax(out, dim=-1, name=None)
         input_extracted = tf.extract_image_patches(images,
                                                     ksizes=[1, ksize, ksize, 1],
                                                     strides=[1, 1, 1, 1],
@@ -197,7 +197,7 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
                                         [batch_size, 64, 64, ksize*ksize, 3])
         out = tf.stack([out]*3, axis=4)
         out *= input_extracted
-        out = tf.reduce_mean(out, 3)
+        out = tf.reduce_sum(out, 3)
 
     return out
 

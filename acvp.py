@@ -64,7 +64,7 @@ class Trainer():
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
         elif arg_transform:
-            self.g_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE)
+            self.g_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE, ksize=6)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
         else:
@@ -82,14 +82,14 @@ class Trainer():
             reuse=True)
 
         g_psnr = build_psnr(self.next_frame_ph, self.g_next_frame)
-        g_l2_loss = tf.norm(self.g_out - gt_output, ord=1, axis=None, keep_dims=False, name='l1_difference')
+        g_l2_loss = tf.norm(self.g_out - gt_output, ord=1, axis=None, keep_dims=False, name='l1_difference')/BATCH_SIZE
 
         if arg_transform:
             g_l2_loss *= 1
 
         if arg_adv:
             g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
-            self.g_loss = 0.2*g_l2_loss + g_adv_loss
+            self.g_loss = g_l2_loss + g_adv_loss
         else:
             self.g_loss = g_l2_loss
 
