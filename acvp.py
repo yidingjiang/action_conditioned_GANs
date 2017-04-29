@@ -13,7 +13,7 @@ np.random.seed(7)
 HISTORY_LENGTH = 1
 IMG_WIDTH = 64
 IMG_HEIGHT = 64
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 
 def build_g_adv_loss(d_out_gen, arg_loss):
     if arg_loss == 'bce':
@@ -85,7 +85,7 @@ class Trainer():
         g_l2_loss = tf.norm(self.g_out - gt_output, ord=1, axis=None, keep_dims=False, name='l1_difference')/BATCH_SIZE
 
         if arg_transform:
-            g_l2_loss *= 1
+            g_l2_loss *= 0.1
 
         if arg_adv:
             g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
@@ -191,7 +191,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
             D_per_G = 1
 
         for i in range(60000):
-            if i < 1:
+            if i < 30:
                 input_batch, next_frame_batch, action_batch = get_batch(
                     sess,
                     img_data_train,
@@ -233,7 +233,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                                                 next_frame_batch[:,end,:,:,:],
                                                 action_batch[:,start_index,:])
 
-            if i % 1 == 0:
+            if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
                 save_samples(output_path,
                             np.expand_dims(input_batch[:8,start_index,:,:,:], axis=1),
@@ -243,7 +243,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                 saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
                 writer.add_summary(summ, i)
                 writer.flush()
-            if i % 1 == 0:
+            if i % 500 == 0:
                 test_input, test_next_frame, test_actions = get_batch(
                     sess,
                     img_data_test,
@@ -262,9 +262,11 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                     predicted.append(test_output)
                     current_frame = test_output
 
+                predicted = np.array(predicted)
+                predicted = np.transpose(predicted, (1,0,2,3,4))
                 save_samples(test_output_path,
                                 test_input, 
-                                np.expand_dims(test_output, axis=1), 
+                                predicted, 
                                 test_next_frame, 
                                 i)
                 test_writer.add_summary(recorded_summ, i)
