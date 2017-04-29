@@ -55,7 +55,7 @@ class Model():
         elif arg_g_loss == 'adv':
             self.g_loss = g_adv_loss
         else:
-            self.g_loss = .001 * g_lp_loss + g_adv_loss
+            self.g_loss = .01 * g_lp_loss + g_adv_loss
         if arg_gdl:
             self.g_loss += self.gdl
 
