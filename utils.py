@@ -490,6 +490,13 @@ def build_discriminator(inputs,
     return out
 
 
+def build_gdl_3d(g_out, next_frames, alpha):
+    gdl_list = []
+    for i in range(g_out.shape[1]):
+        gdl_list.append(
+            build_gdl(g_out[:,i,:,:,:], next_frames[:,i,:,:,:], alpha))
+    return tf.reduce_mean(tf.stack(gdl_list))
+
 def build_gdl(g_out, next_frames, alpha):
     '''
     Copied from:
