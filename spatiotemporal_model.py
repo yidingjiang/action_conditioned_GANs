@@ -9,7 +9,7 @@ from utils import lrelu, build_tfrecord_input, save_samples
 
 
 class Model():
-    def __init__(self, sess, arg_g_loss, arg_actions):
+    def __init__(self, sess, arg_g_loss, arg_actions, arg_l_ord):
         self.sess = sess
         self.sequence = tf.placeholder(tf.float32, [None, 6, 64, 64, 3], name='sequence_ph')
         self.actions = tf.placeholder(tf.float32, [None, 6, 10], name='actions_ph')
@@ -42,25 +42,24 @@ class Model():
         self.d_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, 'd')
 
         # Define loss for both d and g
-        l_ord = 2
-        g_lp_loss = tf.reduce_mean(tf.reduce_sum(
-            tf.abs(self.g_out - self.sequence)**l_ord, axis=[1, 2, 3, 4]))
+        l_ord = arg_l_ord
+            tf.abs(self.g_out - self.sequence)**arg_l_ord, axis=[1, 2, 3, 4]))
 
         g_adv_loss = tf.losses.sigmoid_cross_entropy(
             tf.ones_like(self.d_gen), self.d_gen)
-        if arg_g_loss == 'l2':
+        if arg_g_loss == 'lp':
             self.g_loss = g_lp_loss
         elif arg_g_loss == 'adv':
             self.g_loss = g_adv_loss
         else:
-            self.g_loss = .005 * g_lp_loss + g_adv_loss
+            self.g_loss = .001 * g_lp_loss + g_adv_loss
         d_real_loss = tf.losses.sigmoid_cross_entropy(
             0.9 * tf.ones_like(self.d_real), self.d_real)
         d_gen_loss = tf.losses.sigmoid_cross_entropy(
             tf.zeros_like(self.d_gen), self.d_gen)
         self.d_loss = d_real_loss + d_gen_loss
         tf.summary.scalar('g_loss', self.g_loss)
-        tf.summary.scalar('g_lp_loss', g_lp_loss)
+        tf.summary.scalar('g_l{:d}_loss'.format(arg_l_ord), g_lp_loss)
         tf.summary.scalar('g_adv_loss', g_adv_loss)
         tf.summary.scalar('d_real_loss', d_real_loss)
         tf.summary.scalar('d_gen_loss', d_gen_loss)
@@ -226,10 +225,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('input_path', type=str)
     parser.add_argument('output_path', type=str)
-    parser.add_argument('--g_loss', type=str, default='l2')
+    parser.add_argument('--g_loss', type=str, default='lp')
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--iterations', type=int, default=10000)
     parser.add_argument('--actions', action='store_true')
+    parser.add_argument('--l_ord', type=int, default=2)
     args = parser.parse_args()
     train_output_path = os.path.join(args.output_path, 'train_output')
     test_output_path = os.path.join(args.output_path, 'test_output')
@@ -247,7 +247,7 @@ if __name__ == '__main__':
         20, .95, True, training=False)
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
-        m = Model(sess, args.g_loss, args.actions)
+        m = Model(sess, args.g_loss, args.actions, args.l_ord)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
         train_writer = tf.summary.FileWriter(
