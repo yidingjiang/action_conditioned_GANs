@@ -241,6 +241,8 @@ if __name__ == '__main__':
     parser.add_argument('--actions', action='store_true')
     parser.add_argument('--gdl', action='store_true')
     parser.add_argument('--l_ord', type=int, default=2)
+    parser.add_argument('--load_model', type=str)
+    parser.add_argument('--test_only', action='store_true')
     args = parser.parse_args()
     train_output_path = os.path.join(args.output_path, 'train_output')
     test_output_path = os.path.join(args.output_path, 'test_output')
@@ -259,14 +261,24 @@ if __name__ == '__main__':
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
         m = Model(sess, args.g_loss, args.gdl, args.actions, args.l_ord)
+        print('Model construction completed.')
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
+        saver = tf.train.Saver()
+        if args.load_model:
+            print('Loading model...')
+            saver.restore(sess, tf.train.latest_checkpoint(args.load_model))
+        if args.test_only:
+            for idx in range(14):
+                test_seq_batch = sess.run(test_sequence)[:,idx:idx+6,:,:,:]
+                test_actions_batch = sess.run(test_actions)[:,idx:idx+6,:]
+                test_g_out, test_summ = m.test_batch(test_seq_batch, test_actions_batch)
+                save_samples(args.output_path, test_seq_batch, test_g_out, idx)
+            exit()
         train_writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'train'), sess.graph)
         test_writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'test'))
-        saver = tf.train.Saver()
-        print('Model construction completed.')
         for i in range(args.iterations):
             idx = np.random.choice(14)
             seq_batch = sess.run(sequence)[:,idx:idx+6,:,:,:]
