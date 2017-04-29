@@ -12,7 +12,7 @@ RELU_SHIFT = 1e-12
 
 def get_batch(sess, img_tensor, action_state_tensor, batch_size):
     img, action = sess.run([img_tensor, action_state_tensor])
-    return img[:,0,:,:,:], img[:,1,:,:,:], action
+    return img[:,:,:,:,:], img[:,:,:,:,:], action
 
 
 def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
@@ -32,20 +32,20 @@ def save_samples(output_path, input_sample, generated_sample, gt, sample_number)
         if not os.path.exists(vid_folder):
             os.makedirs(vid_folder)
         vid = input_sample[i]
-        for j in range(int(vid.shape[2] / 3)):
+        for j in range(vid.shape[0]):
             save_path = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
-            plt.imsave(save_path, frame[:,:,::-1])
+            frame = vid[j]
+            plt.imsave(save_path, frame)
         vid = generated_sample[i]
-        for j in range(int(vid.shape[2] / 3)):
+        for j in range(vid.shape[0]):
             save_path = os.path.join(vid_folder, 'generated{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
-            plt.imsave(save_path, frame[:,:,::-1])
+            frame = vid[j]
+            plt.imsave(save_path, frame)
         vid = gt[i]
-        for j in range(int(vid.shape[2] / 3)):
-            save_path = os.path.join(vid_folder, 'ground_truth{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
-            plt.imsave(save_path, frame[:,:,::-1])
+        for j in range(vid.shape[0]):
+            save_path = os.path.join(vid_folder, 'gt{:d}.png'.format(j))
+            frame = vid[j]
+            plt.imsave(save_path, frame)
 
 
 def build_psnr(true, pred):
@@ -96,9 +96,8 @@ def cdna_transformation(prev_image, cdna_input, num_masks, color_channels):
         transformed.append(
             tf.nn.depthwise_conv2d(preimg, kernel, [1, 1, 1, 1], 'SAME'))
     transformed = tf.concat(axis=0, values=transformed)
-    print(transformed.get_shape())
     transformed = tf.split(axis=3, num_or_size_splits=num_masks, value=transformed)
-    print(len(transformed))
+
     return transformed
 
 
@@ -192,7 +191,7 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
                                                     strides=[1, 1, 1, 1],
                                                     rates=[1, 1, 1, 1],
                                                     padding='SAME')
-        print(input_extracted.get_shape())
+
         input_extracted = tf.reshape(input_extracted,
                                         [batch_size, 64, 64, ksize*ksize, 3])
         out = tf.stack([out]*3, axis=4)
@@ -609,15 +608,15 @@ def build_tfrecord_input(batch_size,
       action_seq.append(action)
 
   image_seq = tf.concat(axis=0, values=image_seq)
-
   if use_state:
     state_seq = tf.concat(axis=0, values=state_seq)
     action_seq = tf.concat(axis=0, values=action_seq)
+
     [image_batch, action_batch, state_batch] = tf.train.batch(
         [image_seq, action_seq, state_seq],
         batch_size,
         num_threads=batch_size,
-        capacity=100 * batch_size)
+        capacity=500 * batch_size)
     action_state = tf.concat(values=[action_batch, state_batch], axis=2)
     return image_batch, action_state
   else:
@@ -625,7 +624,7 @@ def build_tfrecord_input(batch_size,
         [image_seq],
         batch_size,
         num_threads=batch_size,
-        capacity=100 * batch_size)
+        capacity=500 * batch_size)
     zeros_batch = tf.zeros([batch_size, sequence_length, 2 * STATE_DIM])
     return image_batch, zeros_batch
 
