@@ -33,12 +33,12 @@ def save_samples(output_path, input_sample, generated_sample, sample_number):
         for j in range(vid.shape[0]):
             save_path = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
             frame = vid[j,:,:,:]
-            plt.imsave(save_path, frame[:,:,::-1])
+            plt.imsave(save_path, frame)
         vid = generated_sample[i]
         for j in range(vid.shape[0]):
             save_path = os.path.join(vid_folder, 'generated{:d}.png'.format(j))
             frame = vid[j,:,:,:]
-            plt.imsave(save_path, frame[:,:,::-1])
+            plt.imsave(save_path, frame)
 
 
 def build_psnr(true, pred):
