@@ -30,14 +30,14 @@ class Model():
             self.g_out = self._build_generator(input_images, tiled_actions)
         with tf.variable_scope('d'):
             d_conv_layers = self._build_d_conv_layers()
+            d_conv_layer_weights = [v for layer in d_conv_layers for v in layer.trainable_weights]
             self.d_real = self._build_discriminator(self.sequence, d_conv_layers, d_actions)
         with tf.variable_scope('d', reuse=True):
             self.d_gen = self._build_discriminator(self.g_out, d_conv_layers, d_actions)
 
         self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g')
         self.d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd')
-        # self.clip_d = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in self.d_vars]
-        # Batch norm update ops
+        self.clip_d = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in d_conv_layer_weights]
         self.g_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, 'g')
         self.d_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, 'd')
 
@@ -57,7 +57,7 @@ class Model():
         else:
             self.g_loss = .01 * g_lp_loss + g_adv_loss
         if arg_gdl:
-            self.g_loss += self.gdl
+            self.g_loss += .001 * self.gdl
 
         d_real_loss = tf.losses.sigmoid_cross_entropy(
             0.9 * tf.ones_like(self.d_real), self.d_real)
@@ -79,7 +79,7 @@ class Model():
         with tf.control_dependencies(self.g_update_ops):
             self.g_opt_op = tf.train.AdamOptimizer(1e-3, name='g_opt').minimize(
                 self.g_loss, var_list=self.g_vars)
-        with tf.control_dependencies(self.d_update_ops):
+        with tf.control_dependencies(self.d_update_ops + self.clip_d):
             self.d_opt_op = tf.train.AdamOptimizer(1e-3, name='d_opt').minimize(
                 self.d_loss, var_list=self.d_vars)
 
@@ -280,7 +280,8 @@ if __name__ == '__main__':
         test_writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'test'))
         for i in range(args.iterations):
-            idx = np.random.choice(14)
+            #idx = np.random.choice(14)
+            idx = 6
             seq_batch = sess.run(sequence)[:,idx:idx+6,:,:,:]
             actions_batch = sess.run(actions)[:,idx:idx+6,:]
             g_loss, g_out = m.train_g(seq_batch, actions_batch, output=(i%100==0))
