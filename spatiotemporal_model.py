@@ -294,7 +294,7 @@ if __name__ == '__main__':
                 test_seq_batch = sess.run(test_sequence)[:,idx:idx+6,:,:,:]
                 test_actions_batch = sess.run(test_actions)[:,idx:idx+6,:]
                 test_g_out, test_summ = m.test_batch(test_seq_batch, test_actions_batch)
-                save_samples(test_output_path, test_seq_batch[:5], test_g_out[:5], i)
+                save_samples(test_output_path, test_seq_batch[:5], test_g_out[:5], i, gif=True)
                 test_writer.add_summary(test_summ, i)
                 test_writer.flush()
             if i % 500 == 0:

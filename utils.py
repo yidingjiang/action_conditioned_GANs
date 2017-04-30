@@ -4,6 +4,7 @@ from tensorflow import gfile
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+import imageio
 
 
 DNA_KERN_SIZE = 5
@@ -15,7 +16,7 @@ def get_batch(sess, img_tensor, action_state_tensor, batch_size):
     return img[:,0,:,:,:], img[:,1,:,:,:], action
 
 
-def save_samples(output_path, input_sample, generated_sample, sample_number):
+def save_samples(output_path, input_sample, generated_sample, sample_number, individual=True, gif=False):
     input_sample = (255. / 2) * (input_sample + 1.)
     input_sample = input_sample.astype(np.uint8)
     generated_sample = (255. / 2) * (generated_sample + 1.)
@@ -30,15 +31,21 @@ def save_samples(output_path, input_sample, generated_sample, sample_number):
         if not os.path.exists(vid_folder):
             os.makedirs(vid_folder)
         vid = input_sample[i]
-        for j in range(vid.shape[0]):
-            save_path = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
-            frame = vid[j,:,:,:]
-            plt.imsave(save_path, frame)
+        if gif:
+            imageio.mimsave(os.path.join(vid_folder, 'gt.gif'), vid, duration=.25)
+        if individual:
+            for j in range(vid.shape[0]):
+                save_path = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
+                frame = vid[j,:,:,:]
+                plt.imsave(save_path, frame)
         vid = generated_sample[i]
-        for j in range(vid.shape[0]):
-            save_path = os.path.join(vid_folder, 'generated{:d}.png'.format(j))
-            frame = vid[j,:,:,:]
-            plt.imsave(save_path, frame)
+        if gif:
+            imageio.mimsave(os.path.join(vid_folder, 'generated.gif'), vid, duration=.25)
+        if individual:
+            for j in range(vid.shape[0]):
+                save_path = os.path.join(vid_folder, 'generated{:d}.png'.format(j))
+                frame = vid[j,:,:,:]
+                plt.imsave(save_path, frame)
 
 
 def build_psnr(true, pred):
