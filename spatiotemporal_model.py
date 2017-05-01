@@ -219,8 +219,10 @@ class Model():
 
         output_frames = []
         for i in range(4):
-            #normalized_transform = tf.nn.l2_normalize(out[:,i,:,:,:], dim=3)
-            normalized_transform = tf.nn.softmax(out[:,i,:,:,:], dim=-1)
+            pos_out = tf.nn.relu(out[:,i,:,:,:])
+            normalizer = tf.reduce_sum(pos_out, -1, keep_dims=True)
+            normalized_transform = pos_out / normalizer
+            #normalized_transform = tf.nn.softmax(out[:,i,:,:,:], dim=-1)
             repeated_transform = tf.stack(3 * [normalized_transform], axis=4)
             frame_i = tf.reduce_sum(repeated_transform * patches, axis=3)
             output_frames.append(frame_i)
