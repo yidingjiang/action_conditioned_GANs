@@ -219,7 +219,7 @@ class Model():
 
         output_frames = []
         for i in range(4):
-            pos_out = tf.nn.relu(out[:,i,:,:,:])
+            pos_out = tf.nn.relu(out[:,i,:,:,:] - 1e-12) + 1e-12
             normalizer = tf.reduce_sum(pos_out, -1, keep_dims=True)
             normalized_transform = pos_out / normalizer
             #normalized_transform = tf.nn.softmax(out[:,i,:,:,:], dim=-1)
