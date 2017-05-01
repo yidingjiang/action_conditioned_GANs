@@ -169,11 +169,11 @@ class Model():
         ksize = 10
         batch_size = tf.shape(img_input)[0]
         conv_specs = [
-            (32, [1, 3, 3]),
-            (64, [1, 3, 3]),
-            (128, [1, 3, 3]),
-            (256, [1, 3, 3]),
-            (32, [2, 1, 1])
+            (32, [1, 3, 3], [1, 1, 1]),
+            (64, [1, 3, 3], [1, 2, 2]),
+            (128, [1, 3, 3], [1, 4, 4]),
+            (256, [1, 3, 3], [1, 6, 6]),
+            (32, [2, 1, 1], [1, 1, 1])
         ]
         out = img_input
         for i, spec in enumerate(conv_specs):
@@ -182,6 +182,7 @@ class Model():
                 spec[1],
                 activation='relu',
                 padding='same' if i < len(conv_specs) - 1 else 'valid',
+                dilation_rate=spec[2],
                 name='conv{:d}'.format(i))(out)
             out = tf.layers.batch_normalization(
                 out,
