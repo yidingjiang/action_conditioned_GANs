@@ -101,6 +101,105 @@ def cdna_transformation(prev_image, cdna_input, num_masks, color_channels):
     return transformed
 
 
+def build_generator_transform_no_stride(images, actions, batch_size, reuse=False, color_channels=3, num_masks=1, ksize=5):
+    with tf.variable_scope('g', reuse=reuse):
+        out = slim.conv2d(
+            images,
+            32,
+            [3, 3],
+            activation_fn=tf.nn.relu,
+            stride=1,
+            scope='conv1',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        out = slim.conv2d(
+            out,
+            64,
+            [3, 3],
+            activation_fn=tf.nn.relu,
+            stride=1,
+            scope='conv2',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        out = slim.conv2d(
+            out,
+            128,
+            [5, 5],
+            activation_fn=tf.nn.relu,
+            stride=1,
+            scope='conv3',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        out = slim.conv2d(
+            out,
+            256,
+            [5, 5],
+            activation_fn=tf.nn.relu,
+            stride=2,
+            scope='conv4',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        out = tf.concat(values=[out, actions], axis=3)
+        out = slim.conv2d(
+            out,
+            128,
+            [5, 5],
+            activation_fn=tf.nn.relu,
+            stride=1,
+            scope='tconv1',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        out = slim.conv2d(
+            out,
+            128,
+            [5, 5],
+            activation_fn=tf.nn.relu,
+            stride=1,
+            scope='tconv2',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        out = slim.conv2d(
+            out,
+            128,
+            [3, 3],
+            activation_fn=tf.nn.relu,
+            stride=1,
+            scope='tconv3',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        out = slim.conv2d(
+            out,
+            ksize*ksize,
+            [3, 3],
+            activation_fn=None,
+            stride=1,
+            scope='tconv4',
+            padding='SAME',
+            reuse=reuse)
+
+        out = tf.nn.softmax(out, dim=-1, name=None)
+        input_extracted = tf.extract_image_patches(images,
+                                                    ksizes=[1, ksize, ksize, 1],
+                                                    strides=[1, 1, 1, 1],
+                                                    rates=[1, 1, 1, 1],
+                                                    padding='SAME')
+
+        input_extracted = tf.reshape(input_extracted,
+                                        [batch_size, 64, 64, ksize*ksize, 3])
+        out = tf.stack([out]*3, axis=4)
+        out *= input_extracted
+        out = tf.reduce_sum(out, 3)
+
+    return out
+
+
 
 def build_generator_transform(images, actions, batch_size, reuse=False, color_channels=3, num_masks=1, ksize=5):
     with tf.variable_scope('g', reuse=reuse):
@@ -470,7 +569,7 @@ def build_discriminator(inputs,
         out = slim.conv2d(
             out,
             256,
-            [5, 5],
+            [3, 3],
             activation_fn=lrelu,
             stride=2,
             scope='conv4',
@@ -479,7 +578,7 @@ def build_discriminator(inputs,
         out = slim.conv2d(
             out,
             512,
-            [5, 5],
+            [3, 3],
             activation_fn=lrelu,
             stride=2,
             scope='conv5',
@@ -496,7 +595,7 @@ def build_discriminator(inputs,
     return out
 
 
-def build_gdl(g_out, next_frames, alpha):
+def build_gdl(g_out, next_frames, alpha=1):
     '''
     Copied from:
     https://github.com/dyelax/Adversarial_Video_Generation/
@@ -575,7 +674,7 @@ def build_tfrecord_input(batch_size,
 
   image_seq, state_seq, action_seq = [], [], []
 
-  for i in range(0, 19, 3):
+  for i in range(6, 21, 4):
     image_name = 'move/' + str(i) + '/image/encoded'
     action_name = 'move/' + str(i) + '/commanded_pose/vec_pitch_yaw'
     state_name = 'move/' + str(i) + '/endeffector/vec_pitch_yaw'

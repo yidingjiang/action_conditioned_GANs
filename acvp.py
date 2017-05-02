@@ -53,9 +53,9 @@ class Trainer():
             [BATCH_SIZE, 10],
             name='action')
 
-        reshaped_actions = tf.reshape(self.action_ph, [tf.shape(self.action_ph)[0], 1, 1, 10])
-        reshaped_actions = tf.tile(reshaped_actions, [1, 4, 4, 1])
-        reshaped_actions_d = tf.tile(reshaped_actions, [1, 4, 4, 1])
+        reshaped_actions_raw = tf.reshape(self.action_ph, [tf.shape(self.action_ph)[0], 1, 1, 10])
+        reshaped_actions = tf.tile(reshaped_actions_raw, [1, 4, 4, 1])
+        reshaped_actions_d = tf.tile(reshaped_actions_raw, [1, 4, 4, 1])
 
         if arg_attention:
             self.foreground, self.mask, self.background = build_generator_atn(self.img_ph, reshaped_actions)
@@ -64,6 +64,7 @@ class Trainer():
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
         elif arg_transform:
+            reshaped_actions = tf.tile(reshaped_actions_raw, [1, 64, 64, 1])
             self.g_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE, ksize=6)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
@@ -82,14 +83,14 @@ class Trainer():
             reuse=True)
 
         g_psnr = build_psnr(self.next_frame_ph, self.g_next_frame)
-        g_l2_loss = tf.norm(self.g_out - gt_output, ord=1, axis=None, keep_dims=False, name='l1_difference')/BATCH_SIZE
+        g_l2_loss = tf.norm(self.g_out - gt_output, ord=2, axis=None, keep_dims=False, name='difference_norm')/BATCH_SIZE
 
         if arg_transform:
-            g_l2_loss *= 0.1
+            g_l2_loss *= 1
 
         if arg_adv:
             g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
-            self.g_loss = g_l2_loss + g_adv_loss
+            self.g_loss = g_l2_loss + g_adv_loss + build_gdl(self.next_frame_ph, self.g_next_frame)
         else:
             self.g_loss = g_l2_loss
 
@@ -191,14 +192,15 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
             D_per_G = 1
 
         for i in range(60000):
-            if i < 30:
+            if i < 10:
                 input_batch, next_frame_batch, action_batch = get_batch(
                     sess,
                     img_data_train,
                     action_data_train,
                     BATCH_SIZE)
 
-                start_index = np.random.choice(input_batch.shape[1]-2, 1)[0]
+                #start_index = np.random.choice(input_batch.shape[1]-2, 1)[0]
+                start_index = 0
                 end = start_index+1
                 gen_next_frames = trainer.pretrain_g(input_batch[:,start_index,:,:,:],
                                                         next_frame_batch[:,end,:,:,:],
@@ -214,20 +216,23 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
 
                 make_summ = (i % 100 == 0) and (j == D_per_G-1)
 
-                start_index = np.random.choice(input_batch.shape[1]-2, 1)[0]
+                #start_index = np.random.choice(input_batch.shape[1]-2, 1)[0]
+                start_index = 0
                 end = start_index+1
 
                 summ = trainer.train_d(input_batch[:,start_index,:,:,:],
                                         next_frame_batch[:,end,:,:,:],
                                         action_batch[:,start_index,:],
                                         summarize=make_summ)
+
             input_batch, next_frame_batch, action_batch = get_batch(
                 sess,
                 img_data_train,
                 action_data_train,
                 BATCH_SIZE)
 
-            start_index = np.random.choice(input_batch.shape[1]-2, 1)[0]
+            # start_index = np.random.choice(input_batch.shape[1]-2, 1)[0]
+            start_index = 0
             end = start_index+1
             gen_next_frames = trainer.train_g(input_batch[:,start_index,:,:,:],
                                                 next_frame_batch[:,end,:,:,:],
@@ -236,9 +241,9 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
                 save_samples(output_path,
-                            np.expand_dims(input_batch[:8,start_index,:,:,:], axis=1),
-                            np.expand_dims(gen_next_frames[:8,:,:,:], axis=1),
-                            np.expand_dims(next_frame_batch[:8,start_index,:,:,:], axis=1),
+                            np.expand_dims(input_batch[:16,start_index,:,:,:], axis=1),
+                            np.expand_dims(gen_next_frames[:16,:,:,:], axis=1),
+                            np.expand_dims(next_frame_batch[:16,end,:,:,:], axis=1),
                             i)
                 saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
                 writer.add_summary(summ, i)
@@ -252,7 +257,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
 
                 predicted = []
                 current_frame = test_input[:,0,:,:,:]
-                for j in range(test_input.shape[1]-1):
+                for j in range(0, test_input.shape[1]-1):
                     test_output, test_summ = trainer.test(current_frame,
                                                             test_next_frame[:,j,:,:,:],
                                                             test_actions[:,j,:])
@@ -265,9 +270,9 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                 predicted = np.array(predicted)
                 predicted = np.transpose(predicted, (1,0,2,3,4))
                 save_samples(test_output_path,
-                                test_input, 
-                                predicted, 
-                                test_next_frame, 
+                                test_input[:4], 
+                                predicted[:4], 
+                                test_next_frame[:4], 
                                 i)
                 test_writer.add_summary(recorded_summ, i)
 
