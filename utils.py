@@ -138,7 +138,7 @@ def build_generator_transform_no_stride(images, actions, batch_size, reuse=False
             256,
             [5, 5],
             activation_fn=tf.nn.relu,
-            stride=2,
+            stride=1,
             scope='conv4',
             padding='SAME',
             normalizer_fn=slim.batch_norm,

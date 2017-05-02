@@ -65,7 +65,8 @@ class Trainer():
             gt_output = self.next_frame_ph
         elif arg_transform:
             reshaped_actions = tf.tile(reshaped_actions_raw, [1, 64, 64, 1])
-            self.g_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE, ksize=6)
+            reshaped_actions_d = tf.tile(reshaped_actions_raw, [1, 16, 16, 1])
+            self.g_out = build_generator_transform_no_stride(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE, ksize=10)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
         else:
