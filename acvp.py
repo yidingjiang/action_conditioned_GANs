@@ -66,9 +66,10 @@ class Trainer():
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
         elif arg_transform:
-            self.g_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE, ksize=6)
+            self.g_out, self.g_state_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE, ksize=6)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
+            gt_stateout = self.action_ph[:,1,6:]
         else:
             self.g_out = build_generator(self.img_ph, reshaped_actions)
             self.g_next_frame = self.g_out
@@ -88,6 +89,8 @@ class Trainer():
 
         if arg_transform:
             g_l2_loss *= 1
+            g_state_loss = tf.norm(self.g_state_out - gt_stateout, ord=2, axis=None, keep_dims=False)/BATCH_SIZE
+            g_l2_loss += g_state_loss
 
         if arg_adv:
             g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
@@ -120,6 +123,8 @@ class Trainer():
         d_loss_summary = tf.summary.scalar('discriminator_loss', self.d_loss)
         g_loss_summary = tf.summary.scalar('g_loss', self.g_loss)
         g_l2_loss_summary = tf.summary.scalar('g_l2_loss', g_l2_loss)
+        g_state_loss_summary = tf.summary.scalar('g_state_loss', g_state_loss)
+
         if arg_adv:
             g_adv_loss_summary = tf.summary.scalar('g_adv_loss', g_adv_loss)
         psnr_summary = tf.summary.scalar('g_psnr', g_psnr)

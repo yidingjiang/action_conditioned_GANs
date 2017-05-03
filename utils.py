@@ -166,6 +166,38 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
             padding='SAME',
             normalizer_fn=slim.batch_norm,
             reuse=reuse)
+
+        state_out = slim.conv2d(
+            out,
+            32,
+            [3, 3],
+            activation_fn=tf.nn.relu,
+            stride=2,
+            scope='sconv3',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        state_out = slim.conv2d(
+            out,
+            16,
+            [3, 3],
+            activation_fn=tf.nn.relu,
+            stride=2,
+            scope='sconv4',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        state_out = slim.conv2d(
+            out,
+            5,
+            [4, 4],
+            activation_fn=None,
+            stride=1,
+            scope='sconv4',
+            padding='SAME',
+            normalizer_fn=None,
+            reuse=reuse)
+
         out = slim.conv2d_transpose(
             out,
             128,
@@ -193,15 +225,13 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
                                                     rates=[1, 1, 1, 1],
                                                     padding='SAME')
         print(input_extracted.get_shape())
-        input_extracted = tf.reshape(input_extracted, 
+        input_extracted = tf.reshape(input_extracted,
                                        [batch_size, 64, 64, ksize*ksize, 3])
-        #out = tf.nn.l2_normalize(out, 3)
-        #out /= tf.reduce_sum(out, [3], keep_dims=True)
         out = tf.stack([out]*3, axis=4)
         out *= input_extracted
         out = tf.reduce_sum(out, 3)
 
-    return out
+    return out, tf.squeeze(state_out)
 
 def build_generator(images, actions, reuse=False):
     with tf.variable_scope('g', reuse=reuse):
