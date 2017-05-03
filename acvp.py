@@ -14,6 +14,8 @@ HISTORY_LENGTH = 1
 IMG_WIDTH = 64
 IMG_HEIGHT = 64
 BATCH_SIZE = 64
+ADAM_LR = 1e-3
+NORM_ORDER = 1
 
 def build_g_adv_loss(d_out_gen, arg_loss):
     if arg_loss == 'bce':
@@ -82,7 +84,7 @@ class Trainer():
             reuse=True)
 
         g_psnr = build_psnr(self.next_frame_ph, self.g_next_frame)
-        g_l2_loss = tf.norm(self.g_out - gt_output, ord=1, axis=None, keep_dims=False, name='l1_difference')/BATCH_SIZE
+        g_l2_loss = tf.norm(self.g_out - gt_output, ord=NORM_ORDER, axis=None, keep_dims=False, name='l1_difference')/BATCH_SIZE
 
         if arg_transform:
             g_l2_loss *= 1
@@ -103,7 +105,7 @@ class Trainer():
             lr = 5e-5
         else:
             optimizer = tf.train.AdamOptimizer
-            lr = 1e-3
+            lr = ADAM_LR
 
         self.g_opt_op = optimizer(
             lr,
