@@ -170,13 +170,15 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
     img_data_train, action_data_train = build_tfrecord_input(
         BATCH_SIZE,
         input_path,
-        1 + HISTORY_LENGTH, .7, True)
+        1 + HISTORY_LENGTH, .9, True)
     img_data_test, action_data_test = build_tfrecord_input(
         BATCH_SIZE,
         input_path,
-        1 + HISTORY_LENGTH, .7, True, training=False)
+        1 + HISTORY_LENGTH, .9, True, training=False)
     action_data_train = tf.squeeze(action_data_train[:,0,:])
     action_data_test = tf.squeeze(action_data_test[:,0,:])
+    next_state_train = tf.squeeze(action_data_train[:,1,6:])
+    next_state_test = tf.squeeze(action_data_test[:,1,6:])
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
         trainer = Trainer(sess, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention)
