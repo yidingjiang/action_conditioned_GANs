@@ -10,9 +10,13 @@ DNA_KERN_SIZE = 5
 RELU_SHIFT = 1e-12
 
 
-def get_batch(sess, img_tensor, action_state_tensor, batch_size):
-    img, action = sess.run([img_tensor, action_state_tensor])
-    return img[:,0,:,:,:], img[:,1,:,:,:], action
+def get_batch(sess, img_tensor, action_state_tensor, batch_size, next_state_tensor=None):
+    if not next_state_tensor:
+        img, action = sess.run([img_tensor, action_state_tensor])
+        return img[:,0,:,:,:], img[:,1,:,:,:], action
+    else:
+        img, action, state = sess.run([img_tensor, action_state_tensor, next_state_tensor])
+        return img[:,0,:,:,:], img[:,1,:,:,:], action, state
 
 
 def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
@@ -178,7 +182,7 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
             normalizer_fn=slim.batch_norm,
             reuse=reuse)
         state_out = slim.conv2d(
-            out,
+            state_out,
             16,
             [3, 3],
             activation_fn=tf.nn.relu,
@@ -187,14 +191,15 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
             padding='SAME',
             normalizer_fn=slim.batch_norm,
             reuse=reuse)
+        print(state_out.shape)
         state_out = slim.conv2d(
-            out,
+            state_out,
             5,
             [4, 4],
             activation_fn=None,
             stride=1,
-            scope='sconv4',
-            padding='SAME',
+            scope='sconv5',
+            padding='VALID',
             normalizer_fn=None,
             reuse=reuse)
 

@@ -54,6 +54,10 @@ class Trainer():
             tf.float32,
             [BATCH_SIZE, 10],
             name='action')
+        self.next_state = tf.placeholder(
+            tf.float32,
+            [BATCH_SIZE,5],
+            name='next_state')
 
         reshaped_actions = tf.reshape(self.action_ph, [tf.shape(self.action_ph)[0], 1, 1, 10])
         reshaped_actions = tf.tile(reshaped_actions, [1, 4, 4, 1])
@@ -69,7 +73,7 @@ class Trainer():
             self.g_out, self.g_state_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE, ksize=6)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
-            gt_stateout = self.action_ph[:,1,6:]
+            gt_stateout = self.next_state
         else:
             self.g_out = build_generator(self.img_ph, reshaped_actions)
             self.g_next_frame = self.g_out
@@ -131,20 +135,22 @@ class Trainer():
         self.merged_summaries = tf.summary.merge_all()
 
 
-    def pretrain_g(self, input_images, next_frame, actions):
+    def pretrain_g(self, input_images, next_frame, actions, state):
         _, g_res = self.sess.run([self.g_pretrain_opt_op, self.g_loss], feed_dict={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame,
-            self.action_ph: actions
+            self.action_ph: actions,
+            self.next_state: state
         })
         return g_res
 
 
-    def train_g(self, input_images, next_frame, actions):
+    def train_g(self, input_images, next_frame, actions, state):
         _, gen_next_frames = self.sess.run([self.g_opt_op, self.g_next_frame], feed_dict={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame,
-            self.action_ph: actions
+            self.action_ph: actions,
+            self.next_state: state
         })
         return gen_next_frames
 
@@ -180,15 +186,16 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
         BATCH_SIZE,
         input_path,
         1 + HISTORY_LENGTH, .9, True, training=False)
+    
+    next_state_test = tf.squeeze(action_data_test[:,1,6:])
+    next_state_train = tf.squeeze(action_data_train[:,1,6:])
     action_data_train = tf.squeeze(action_data_train[:,0,:])
     action_data_test = tf.squeeze(action_data_test[:,0,:])
-    next_state_train = tf.squeeze(action_data_train[:,1,6:])
-    next_state_test = tf.squeeze(action_data_test[:,1,6:])
     with tf.Session() as sess:
-        tf.train.start_queue_runners(sess)
         trainer = Trainer(sess, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
+        tf.train.start_queue_runners(sess)
         writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'train'), sess.graph)
         test_writer = tf.summary.FileWriter(
@@ -202,23 +209,25 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
 
         for i in range(60000):
             if i < 20:
-                input_batch, next_frame_batch, action_batch = get_batch(
+                input_batch, next_frame_batch, action_batch, state_batch = get_batch(
                     sess,
                     img_data_train,
                     action_data_train,
-                    BATCH_SIZE)
-                gen_next_frames = trainer.pretrain_g(input_batch, next_frame_batch, action_batch)
+                    BATCH_SIZE,
+                    next_state_train)
+                gen_next_frames = trainer.pretrain_g(input_batch, next_frame_batch, action_batch, state_batch)
                 print('pre-train iter: '+str(i))
                 continue
             for j in range(D_per_G):
-                input_batch, next_frame_batch, action_batch = get_batch(
+                input_batch, next_frame_batch, action_batch, state_batch = get_batch(
                     sess,
                     img_data_train,
                     action_data_train,
-                    BATCH_SIZE)
+                    BATCH_SIZE,
+                    next_state_train)
                 make_summ = (i % 100 == 0) and (j==D_per_G-1)
                 summ = trainer.train_d(input_batch, next_frame_batch, action_batch, summarize=make_summ)
-            gen_next_frames = trainer.train_g(input_batch, next_frame_batch, action_batch)
+            gen_next_frames = trainer.train_g(input_batch, next_frame_batch, action_batch,next_state_train, state_batch)
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
                 save_samples(output_path, input_batch, gen_next_frames, next_frame_batch, i)
