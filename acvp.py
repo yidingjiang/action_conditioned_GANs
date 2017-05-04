@@ -127,7 +127,7 @@ class Trainer():
         d_loss_summary = tf.summary.scalar('discriminator_loss', self.d_loss)
         g_loss_summary = tf.summary.scalar('g_loss', self.g_loss)
         g_l2_loss_summary = tf.summary.scalar('g_l2_loss', g_l2_loss)
-        g_state_loss_summary = tf.summary.scalar('g_state_loss', g_state_loss)
+#        g_state_loss_summary = tf.summary.scalar('g_state_loss', g_state_loss)
 
         if arg_adv:
             g_adv_loss_summary = tf.summary.scalar('g_adv_loss', g_adv_loss)
@@ -159,7 +159,8 @@ class Trainer():
         fd={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame,
-            self.action_ph: actions
+            self.action_ph: actions,
+            self.next_state: np.zeros((BATCH_SIZE, 5))
         }
         if summarize:
             _, summ, _ = self.sess.run([self.d_opt_op, self.merged_summaries, self.clip_d], feed_dict=fd)
@@ -172,7 +173,8 @@ class Trainer():
         gen_next_frames, summ = self.sess.run([self.g_next_frame, self.merged_summaries], feed_dict={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame,
-            self.action_ph: actions
+            self.action_ph: actions,
+            self.next_state: np.zeros((BATCH_SIZE, 5))
             })
         return gen_next_frames, summ
 
@@ -187,15 +189,15 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
         input_path,
         1 + HISTORY_LENGTH, .9, True, training=False)
     
-    next_state_test = tf.squeeze(action_data_test[:,1,6:])
-    next_state_train = tf.squeeze(action_data_train[:,1,6:])
+    next_state_test = tf.squeeze(action_data_test[:,1,5:])
+    next_state_train = tf.squeeze(action_data_train[:,1,5:])
     action_data_train = tf.squeeze(action_data_train[:,0,:])
     action_data_test = tf.squeeze(action_data_test[:,0,:])
     with tf.Session() as sess:
+        tf.train.start_queue_runners(sess)
         trainer = Trainer(sess, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
-        tf.train.start_queue_runners(sess)
         writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'train'), sess.graph)
         test_writer = tf.summary.FileWriter(
@@ -227,7 +229,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                     next_state_train)
                 make_summ = (i % 100 == 0) and (j==D_per_G-1)
                 summ = trainer.train_d(input_batch, next_frame_batch, action_batch, summarize=make_summ)
-            gen_next_frames = trainer.train_g(input_batch, next_frame_batch, action_batch,next_state_train, state_batch)
+            gen_next_frames = trainer.train_g(input_batch, next_frame_batch, action_batch, state_batch)
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
                 save_samples(output_path, input_batch, gen_next_frames, next_frame_batch, i)
@@ -235,7 +237,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                 writer.add_summary(summ, i)
                 writer.flush()
             if i % 500 == 0:
-                test_input, test_next_frame, test_actions = get_batch(
+                test_input, test_next_frame, test_actions, _ = get_batch(
                     sess,
                     img_data_test,
                     action_data_test,

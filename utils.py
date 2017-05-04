@@ -4,16 +4,16 @@ from tensorflow import gfile
 import numpy as np
 import os
 import matplotlib.pyplot as plt
-
+import PIL
 
 DNA_KERN_SIZE = 5
 RELU_SHIFT = 1e-12
 
 
 def get_batch(sess, img_tensor, action_state_tensor, batch_size, next_state_tensor=None):
-    if not next_state_tensor:
+    if next_state_tensor is None:
         img, action = sess.run([img_tensor, action_state_tensor])
-        return img[:,0,:,:,:], img[:,1,:,:,:], action
+        return img[:,0,:,:,:], img[:,1,:,:,:], action, None
     else:
         img, action, state = sess.run([img_tensor, action_state_tensor, next_state_tensor])
         return img[:,0,:,:,:], img[:,1,:,:,:], action, state
