@@ -165,9 +165,33 @@ class Model():
         return out
 
 
+    def _transform(self, prev_frame, transform_input, ksize, arg_softmax):
+        batch_size = tf.shape(prev_frame)[0]
+        patches = tf.extract_image_patches(
+            prev_frame,
+            ksizes=[1, ksize, ksize, 1],
+            strides=[1, 1, 1, 1],
+            rates=[1, 1, 1, 1],
+            padding='SAME')
+        patches = tf.reshape(patches, [batch_size, 64, 64, ksize * ksize, 3])
+
+        transform_out = []
+        for i in range(4):
+            if arg_softmax:
+                normalized_transform = tf.nn.softmax(transform_input[:,i,:,:,:], dim=-1)
+            else:
+                pos_out = tf.nn.relu(transform_input[:,i,:,:,:] - 1e-12) + 1e-12
+                normalizer = tf.reduce_sum(pos_out, -1, keep_dims=True)
+                normalized_transform = pos_out / normalizer
+            repeated_transform = tf.stack(3 * [normalized_transform], axis=4)
+            frame_i = tf.reduce_sum(repeated_transform * patches, axis=3)
+            transform_out.append(frame_i)
+        return [tf.stack(transform_out, axis=1)]
+
+
     def _build_generator(self, img_input, tiled_actions, arg_dilation, arg_softmax):
+        prev_frame = img_input[:,1,:,:,:]
         ksize = 10
-        batch_size = tf.shape(img_input)[0]
         conv_specs = [
             (32, [1, 3, 3], [1, 1, 1]),
             (64, [1, 3, 3], [1, 2, 2]),
@@ -201,36 +225,36 @@ class Model():
             training=True,
             name='bn5')
         out = Deconvolution3D(
-            ksize * ksize,
+            32,
             [4, 1, 1],
             strides=[2, 1, 1],
+            padding='same',
+            activation='relu',
+            output_shape=[None, 4, 64, 64, 32],
+            name='tconv2')(out)
+        out = tf.layers.batch_normalization(
+            out,
+            training=True,
+            name='bn6')
+        transform_input = Conv3D(
+            ksize*ksize,
+            [4, 4, 4],
             activation=None,
             padding='same',
-            output_shape=[None, 4, 64, 64, ksize * ksize],
-            name='tconv3')(out)
+            name='transform_conv')(out)
+        transforms = self._transform(prev_frame, transform_input, ksize, arg_softmax)
+        masks = Conv3D(
+            2,
+            [4, 4, 4],
+            activation=None,
+            padding='same',
+            name='mask_conv1')(out)
 
-        prev_frame = img_input[:,1,:,:,:]
-        patches = tf.extract_image_patches(
-            prev_frame,
-            ksizes=[1, ksize, ksize, 1],
-            strides=[1, 1, 1, 1],
-            rates=[1, 1, 1, 1],
-            padding='SAME')
-        patches = tf.reshape(patches, [batch_size, 64, 64, ksize * ksize, 3])
-
-        output_frames = []
-        for i in range(4):
-            if arg_softmax:
-                normalized_transform = tf.nn.softmax(out[:,i,:,:,:], dim=-1)
-            else:
-                pos_out = tf.nn.relu(out[:,i,:,:,:] - 1e-12) + 1e-12
-                normalizer = tf.reduce_sum(pos_out, -1, keep_dims=True)
-                normalized_transform = pos_out / normalizer
-            repeated_transform = tf.stack(3 * [normalized_transform], axis=4)
-            frame_i = tf.reduce_sum(repeated_transform * patches, axis=3)
-            output_frames.append(frame_i)
-
-        combined = [img_input, tf.stack(output_frames, axis=1)]
+        mask_list = tf.split(masks, num_or_size_splits=2, axis=4)
+        output_frames = mask_list[0] * prev_frame
+        for i, mask in enumerate(mask_list[1:]):
+            output_frames += mask * transforms[i]
+        combined = [img_input, output_frames]
         final_output = tf.concat(values=combined, axis=1)
         # batchnorm update ops
         return final_output
