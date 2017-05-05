@@ -27,7 +27,7 @@ class Model():
             d_actions = tf.tile(self.actions[:,:,None,None,:], [1, 1, 64, 64, 1])
 
         with tf.variable_scope('g'):
-            self.g_out = self._build_generator(input_images, tiled_actions)
+            self.g_out = self._build_generator(input_images, tiled_actions, arg_dilation, arg_softmax)
         with tf.variable_scope('d'):
             d_conv_layers = self._build_d_conv_layers()
             d_conv_layer_weights = [v for layer in d_conv_layers for v in layer.trainable_weights]
@@ -182,7 +182,7 @@ class Model():
                 spec[1],
                 activation='relu',
                 padding='same' if i < len(conv_specs) - 1 else 'valid',
-                dilation_rate=spec[2] if arg_dilation else None,
+                dilation_rate=spec[2] if arg_dilation else (1, 1, 1),
                 name='conv{:d}'.format(i))(out)
             out = tf.layers.batch_normalization(
                 out,
@@ -288,8 +288,7 @@ if __name__ == '__main__':
         test_writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'test'))
         for i in range(args.iterations):
-            #idx = np.random.choice(14)
-            idx = 6
+            idx = np.random.choice(14)
             seq_batch = sess.run(sequence)[:,idx:idx+6,:,:,:]
             actions_batch = sess.run(actions)[:,idx:idx+6,:]
             g_loss, g_out = m.train_g(seq_batch, actions_batch, output=(i%100==0))
@@ -299,8 +298,8 @@ if __name__ == '__main__':
                 save_samples(train_output_path, seq_batch[:5], g_out[:5], i, gif=True, individual=False)
                 train_writer.add_summary(summ, i)
                 train_writer.flush()
-                test_seq_batch = sess.run(test_sequence)[:,idx:idx+6,:,:,:]
-                test_actions_batch = sess.run(test_actions)[:,idx:idx+6,:]
+                test_seq_batch = sess.run(test_sequence)[:,6:12,:,:,:]
+                test_actions_batch = sess.run(test_actions)[:,6:12,:]
                 test_g_out, test_summ = m.test_batch(test_seq_batch, test_actions_batch)
                 save_samples(test_output_path, test_seq_batch[:5], test_g_out[:5], i, gif=True, individual=False)
                 test_writer.add_summary(test_summ, i)
