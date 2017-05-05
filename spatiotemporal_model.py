@@ -5,7 +5,7 @@ import numpy as np
 from keras.layers.convolutional import Conv3D
 from keras.layers.normalization import BatchNormalization
 from keras_contrib.layers.convolutional import Deconvolution3D
-from utils import lrelu, build_tfrecord_input, save_samples, build_psnr, build_gdl_3d
+from utils import lrelu, build_tfrecord_input, save_samples, build_psnr, build_gdl_3d, record_hyperparameters
 
 
 class Model():
@@ -257,6 +257,7 @@ if __name__ == '__main__':
     log_dir = os.path.join(args.output_path, 'logs')
     os.makedirs(args.output_path)
     os.makedirs(model_dir)
+    record_hyperparameters(args.output_path, args)
     sequence, actions = build_tfrecord_input(
         args.batch_size,
         args.input_path,
@@ -280,7 +281,7 @@ if __name__ == '__main__':
                 test_seq_batch = sess.run(test_sequence)[:,idx:idx+6,:,:,:]
                 test_actions_batch = sess.run(test_actions)[:,idx:idx+6,:]
                 test_g_out, test_summ = m.test_batch(test_seq_batch, test_actions_batch)
-                save_samples(args.output_path, test_seq_batch, test_g_out, idx)
+                save_samples(args.output_path, test_seq_batch, test_g_out, idx, gif=True, individual=False)
             exit()
         train_writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'train'), sess.graph)
@@ -295,13 +296,13 @@ if __name__ == '__main__':
             d_loss, summ = m.train_d(seq_batch, actions_batch, summarize=(i%100==0))
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
-                save_samples(train_output_path, seq_batch[:5], g_out[:5], i)
+                save_samples(train_output_path, seq_batch[:5], g_out[:5], i, gif=True, individual=False)
                 train_writer.add_summary(summ, i)
                 train_writer.flush()
                 test_seq_batch = sess.run(test_sequence)[:,idx:idx+6,:,:,:]
                 test_actions_batch = sess.run(test_actions)[:,idx:idx+6,:]
                 test_g_out, test_summ = m.test_batch(test_seq_batch, test_actions_batch)
-                save_samples(test_output_path, test_seq_batch[:5], test_g_out[:5], i, gif=True)
+                save_samples(test_output_path, test_seq_batch[:5], test_g_out[:5], i, gif=True, individual=False)
                 test_writer.add_summary(test_summ, i)
                 test_writer.flush()
             if i % 500 == 0:

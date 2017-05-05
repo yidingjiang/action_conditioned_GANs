@@ -5,10 +5,18 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import imageio
+import subprocess
 
 
 DNA_KERN_SIZE = 5
 RELU_SHIFT = 1e-12
+
+
+def record_hyperparameters(output_path, args):
+    commit = subprocess.check_output(['git', 'describe', '--always'])
+    with open(os.path.join(output_path, 'record.txt'), 'w') as f:
+        f.write(commit.decode('ascii'))
+        f.write(str(args))
 
 
 def get_batch(sess, img_tensor, action_state_tensor, batch_size):
