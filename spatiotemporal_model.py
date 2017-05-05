@@ -9,7 +9,7 @@ from utils import lrelu, build_tfrecord_input, save_samples, build_psnr, build_g
 
 
 class Model():
-    def __init__(self, sess, arg_g_loss, arg_gdl, arg_actions, arg_l_ord):
+    def __init__(self, sess, arg_g_loss, arg_gdl, arg_actions, arg_l_ord, arg_dilation, arg_softmax):
         self.sess = sess
         self.sequence = tf.placeholder(tf.float32, [None, 6, 64, 64, 3], name='sequence_ph')
         self.actions = tf.placeholder(tf.float32, [None, 6, 10], name='actions_ph')
@@ -165,7 +165,7 @@ class Model():
         return out
 
 
-    def _build_generator(self, img_input, tiled_actions):
+    def _build_generator(self, img_input, tiled_actions, arg_dilation, arg_softmax):
         ksize = 10
         batch_size = tf.shape(img_input)[0]
         conv_specs = [
@@ -182,7 +182,7 @@ class Model():
                 spec[1],
                 activation='relu',
                 padding='same' if i < len(conv_specs) - 1 else 'valid',
-                dilation_rate=spec[2],
+                dilation_rate=spec[2] if arg_dilation else None,
                 name='conv{:d}'.format(i))(out)
             out = tf.layers.batch_normalization(
                 out,
@@ -220,10 +220,12 @@ class Model():
 
         output_frames = []
         for i in range(4):
-            pos_out = tf.nn.relu(out[:,i,:,:,:] - 1e-12) + 1e-12
-            normalizer = tf.reduce_sum(pos_out, -1, keep_dims=True)
-            normalized_transform = pos_out / normalizer
-            #normalized_transform = tf.nn.softmax(out[:,i,:,:,:], dim=-1)
+            if arg_softmax:
+                normalized_transform = tf.nn.softmax(out[:,i,:,:,:], dim=-1)
+            else:
+                pos_out = tf.nn.relu(out[:,i,:,:,:] - 1e-12) + 1e-12
+                normalizer = tf.reduce_sum(pos_out, -1, keep_dims=True)
+                normalized_transform = pos_out / normalizer
             repeated_transform = tf.stack(3 * [normalized_transform], axis=4)
             frame_i = tf.reduce_sum(repeated_transform * patches, axis=3)
             output_frames.append(frame_i)
@@ -246,6 +248,8 @@ if __name__ == '__main__':
     parser.add_argument('--l_ord', type=int, default=2)
     parser.add_argument('--load_model', type=str)
     parser.add_argument('--test_only', action='store_true')
+    parser.add_argument('--dilation', action='store_true')
+    parser.add_argument('--softmax', action='store_true')
     args = parser.parse_args()
     train_output_path = os.path.join(args.output_path, 'train_output')
     test_output_path = os.path.join(args.output_path, 'test_output')
@@ -263,7 +267,7 @@ if __name__ == '__main__':
         20, .95, True, training=False)
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
-        m = Model(sess, args.g_loss, args.gdl, args.actions, args.l_ord)
+        m = Model(sess, args.g_loss, args.gdl, args.actions, args.l_ord, args.dilation, args.softmax)
         print('Model construction completed.')
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
