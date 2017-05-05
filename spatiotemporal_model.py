@@ -250,9 +250,11 @@ class Model():
             padding='same',
             name='mask_conv1')(out)
 
+        masks = tf.nn.softmax(masks, dim=-1)
         mask_list = tf.split(masks, num_or_size_splits=2, axis=4)
-        output_frames = mask_list[0] * prev_frame
-        for i, mask in enumerate(mask_list[1:]):
+        output_frames = tf.stack(3 * [masks[:,:,:,:,0]], axis=-1) * tf.stack(4 * [prev_frame], axis=1)
+        for i, transform in enumerate(transforms):
+            mask = tf.stack(3*[masks[:,:,:,:,i+1]], axis=-1)
             output_frames += mask * transforms[i]
         combined = [img_input, output_frames]
         final_output = tf.concat(values=combined, axis=1)
