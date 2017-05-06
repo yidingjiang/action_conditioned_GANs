@@ -194,13 +194,14 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
     # action_data_train = tf.squeeze(action_data_train[:,0,:])
     # action_data_test = tf.squeeze(action_data_test[:,0,:])
 
-    boolean_mask = build_all_mask()
-
+    boolean_mask = build_all_mask(img_data_train.shape[1])
+    # print(len(boolean_mask))
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
         trainer = Trainer(sess, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
+
         writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'train'), sess.graph)
         test_writer = tf.summary.FileWriter(
@@ -247,7 +248,6 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                                         next_frame_batch[end_mask],
                                         action_batch[start_mask],
                                         summarize=make_summ)
-
             start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
             end_mask = np.roll(start_mask, 1, axis=1)
             gen_next_frames = trainer.train_g(input_batch[start_mask],
@@ -262,7 +262,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                 save_samples(output_path,
                     np.expand_dims(input_batch[start_mask][:32], axis=1),
                     np.expand_dims(gen_next_frames[:32], axis=1),
-                    np.expand_dims(next_frame_batch[end][:32], axis=1),
+                    np.expand_dims(next_frame_batch[end_mask][:32], axis=1),
                     i)
                 saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
                 writer.add_summary(summ, i)
@@ -272,7 +272,8 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                     sess,
                     img_data_test,
                     action_data_test,
-                    BATCH_SIZE)
+                    BATCH_SIZE,
+                    next_state_train)
 
                 predicted = []
                 current_frame = test_input[:,0,:,:,:]
@@ -280,7 +281,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                 for j in range(0, test_input.shape[1]-1):
                     test_output, test_state, test_summ = trainer.test(current_frame,
                                                             test_next_frame[:,j,:,:,:],
-                                                            np.concatenate(np.squeeze(test_actions[:,j,:5]), current_state))
+                                                            np.concatenate((np.squeeze(test_actions[:,j,:5]), current_state), axis=1))
                     if j==0:
                         recorded_summ = test_summ
 
@@ -296,7 +297,6 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                                 predicted[:16],
                                 test_next_frame[:16],
                                 i)
-                save_samples(test_output_path, test_input, test_output, test_next_frame, i)
                 test_writer.add_summary(test_summ, i)
 
 

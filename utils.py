@@ -11,9 +11,10 @@ RELU_SHIFT = 1e-12
 
 def build_all_mask(num_frame):
     masks = []
-    for i in range(num_frame)
+    for i in range(num_frame):
         m = [0]*num_frame
         m[i]=1
+        masks.append(m)
     return np.array(masks).astype(bool)
 
 # def get_batch(sess, img_tensor, action_state_tensor, batch_size, next_state_tensor=None):
@@ -46,20 +47,20 @@ def save_samples(output_path, input_sample, generated_sample, gt, sample_number)
         if not os.path.exists(vid_folder):
             os.makedirs(vid_folder)
         vid = input_sample[i]
-        for j in range(int(vid.shape[2] / 3)):
+        for j in range(int(vid.shape[0])):
             save_path = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
-            plt.imsave(save_path, frame[:,:,::-1])
+            frame = vid[j]
+            plt.imsave(save_path, frame)
         vid = generated_sample[i]
-        for j in range(int(vid.shape[2] / 3)):
+        for j in range(int(vid.shape[0])):
             save_path = os.path.join(vid_folder, 'generated{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
-            plt.imsave(save_path, frame[:,:,::-1])
+            frame = vid[j]
+            plt.imsave(save_path, frame)
         vid = gt[i]
-        for j in range(int(vid.shape[2] / 3)):
+        for j in range(int(vid.shape[0])):
             save_path = os.path.join(vid_folder, 'ground_truth{:d}.png'.format(j))
-            frame = vid[:,:,3*j:3*(j+1)]
-            plt.imsave(save_path, frame[:,:,::-1])
+            frame = vid[j]
+            plt.imsave(save_path, frame)
 
 
 def build_psnr(true, pred):
