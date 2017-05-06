@@ -9,14 +9,24 @@ import PIL
 DNA_KERN_SIZE = 5
 RELU_SHIFT = 1e-12
 
+def build_all_mask(num_frame):
+    masks = []
+    for i in range(num_frame)
+        m = [0]*num_frame
+        m[i]=1
+    return np.array(masks).astype(bool)
+
+# def get_batch(sess, img_tensor, action_state_tensor, batch_size, next_state_tensor=None):
+#     if next_state_tensor is None:
+#         img, action = sess.run([img_tensor, action_state_tensor])
+#         return img[:,0,:,:,:], img[:,1,:,:,:], action, None
+#     else:
+#         img, action, state = sess.run([img_tensor, action_state_tensor, next_state_tensor])
+#         return img[:,0,:,:,:], img[:,1,:,:,:], action, state
 
 def get_batch(sess, img_tensor, action_state_tensor, batch_size, next_state_tensor=None):
-    if next_state_tensor is None:
-        img, action = sess.run([img_tensor, action_state_tensor])
-        return img[:,0,:,:,:], img[:,1,:,:,:], action, None
-    else:
-        img, action, state = sess.run([img_tensor, action_state_tensor, next_state_tensor])
-        return img[:,0,:,:,:], img[:,1,:,:,:], action, state
+    img, action, state = sess.run([img_tensor, action_state_tensor, next_state_tensor])
+    return img[:,:,:,:,:], img[:,:,:,:,:], action, state
 
 
 def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
@@ -613,7 +623,7 @@ def build_tfrecord_input(batch_size,
 
   image_seq, state_seq, action_seq = [], [], []
 
-  for i in range(6, 11, 2):
+  for i in range(6, 20, 2):
     image_name = 'move/' + str(i) + '/image/encoded'
     action_name = 'move/' + str(i) + '/commanded_pose/vec_pitch_yaw'
     state_name = 'move/' + str(i) + '/endeffector/vec_pitch_yaw'

@@ -170,13 +170,13 @@ class Trainer():
             return None
 
     def test(self, input_images, next_frame, actions):
-        gen_next_frames, summ = self.sess.run([self.g_next_frame, self.merged_summaries], feed_dict={
+        gen_next_frames, gen_next_state, summ = self.sess.run([self.g_next_frame, self.g_state_out, self.merged_summaries], feed_dict={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame,
             self.action_ph: actions,
             self.next_state: np.zeros((BATCH_SIZE, 5))
             })
-        return gen_next_frames, summ
+        return gen_next_frames, gen_next_state, summ
 
 
 def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention):
@@ -188,11 +188,14 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
         BATCH_SIZE,
         input_path,
         1 + HISTORY_LENGTH, .9, True, training=False)
-    
-    next_state_test = tf.squeeze(action_data_test[:,1,5:])
-    next_state_train = tf.squeeze(action_data_train[:,1,5:])
-    action_data_train = tf.squeeze(action_data_train[:,0,:])
-    action_data_test = tf.squeeze(action_data_test[:,0,:])
+
+    next_state_test = tf.squeeze(action_data_test[:,:,5:])
+    next_state_train = tf.squeeze(action_data_train[:,:,5:])
+    # action_data_train = tf.squeeze(action_data_train[:,0,:])
+    # action_data_test = tf.squeeze(action_data_test[:,0,:])
+
+    boolean_mask = build_all_mask()
+
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
         trainer = Trainer(sess, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention)
@@ -217,9 +220,17 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                     action_data_train,
                     BATCH_SIZE,
                     next_state_train)
-                gen_next_frames = trainer.pretrain_g(input_batch, next_frame_batch, action_batch, state_batch)
+
+                start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
+                end_mask = np.roll(start_mask, 1, axis=1)
+
+                gen_next_frames = trainer.pretrain_g(input_batch[start_mask],
+                                                        next_frame_batch[end_mask],
+                                                        action_batch[start_mask],
+                                                        state_batch[end_mask])
                 print('pre-train iter: '+str(i))
                 continue
+
             for j in range(D_per_G):
                 input_batch, next_frame_batch, action_batch, state_batch = get_batch(
                     sess,
@@ -227,22 +238,64 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                     action_data_train,
                     BATCH_SIZE,
                     next_state_train)
+
+                start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
+                end_mask = np.roll(start_mask, 1, axis=1)
+
                 make_summ = (i % 100 == 0) and (j==D_per_G-1)
-                summ = trainer.train_d(input_batch, next_frame_batch, action_batch, summarize=make_summ)
-            gen_next_frames = trainer.train_g(input_batch, next_frame_batch, action_batch, state_batch)
+                summ = trainer.train_d(input_batch[start_mask],
+                                        next_frame_batch[end_mask],
+                                        action_batch[start_mask],
+                                        summarize=make_summ)
+
+            start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
+            end_mask = np.roll(start_mask, 1, axis=1)
+            gen_next_frames = trainer.train_g(input_batch[start_mask],
+                                                next_frame_batch[end_mask],
+                                                action_batch[start_mask],
+                                                state_batch[end_mask])
+
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
-                save_samples(output_path, input_batch, gen_next_frames, next_frame_batch, i)
+                start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
+                end_mask = np.roll(start_mask, 1, axis=1)
+                save_samples(output_path,
+                    np.expand_dims(input_batch[start_mask][:32], axis=1),
+                    np.expand_dims(gen_next_frames[:32], axis=1),
+                    np.expand_dims(next_frame_batch[end][:32], axis=1),
+                    i)
                 saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
                 writer.add_summary(summ, i)
                 writer.flush()
             if i % 500 == 0:
-                test_input, test_next_frame, test_actions, _ = get_batch(
+                test_input, test_next_frame, test_actions, state_batch = get_batch(
                     sess,
                     img_data_test,
                     action_data_test,
                     BATCH_SIZE)
-                test_output, test_summ = trainer.test(test_input, test_next_frame, test_actions)
+
+                predicted = []
+                current_frame = test_input[:,0,:,:,:]
+                current_state = state_batch[:,0]
+                for j in range(0, test_input.shape[1]-1):
+                    test_output, test_state, test_summ = trainer.test(current_frame,
+                                                            test_next_frame[:,j,:,:,:],
+                                                            np.concatenate(np.squeeze(test_actions[:,j,:5]), current_state))
+                    if j==0:
+                        recorded_summ = test_summ
+
+                    predicted.append(test_output)
+                    current_frame = test_output
+                    current_state = test_state
+
+                # test_output, test_summ = trainer.test(test_input, test_next_frame, test_actions)
+                predicted = np.array(predicted)
+                predicted = np.transpose(predicted, (1,0,2,3,4))
+                save_samples(test_output_path,
+                                test_input[:16],
+                                predicted[:16],
+                                test_next_frame[:16],
+                                i)
                 save_samples(test_output_path, test_input, test_output, test_next_frame, i)
                 test_writer.add_summary(test_summ, i)
 
