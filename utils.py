@@ -11,7 +11,7 @@ RELU_SHIFT = 1e-12
 
 def build_all_mask(num_frame):
     masks = []
-    for i in range(num_frame):
+    for i in range(num_frame-1):
         m = [0]*num_frame
         m[i]=1
         masks.append(m)

@@ -257,8 +257,8 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
 
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
-                start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
-                end_mask = np.roll(start_mask, 1, axis=1)
+          #      start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
+           #     end_mask = np.roll(start_mask, 1, axis=1)
                 save_samples(output_path,
                     np.expand_dims(input_batch[start_mask][:32], axis=1),
                     np.expand_dims(gen_next_frames[:32], axis=1),
