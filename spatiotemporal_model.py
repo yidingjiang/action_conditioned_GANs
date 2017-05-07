@@ -167,7 +167,7 @@ class Model():
 
 
     def _cdna(self, prev_frame, transform_input, ksize, arg_softmax):
-        kernels = Dense(10 * 10 * 10)(transform_input)
+        kernels = Dense(4 * 10 * 10 * 10)(transform_input)
         kernels = tf.reshape(kernels, [self.batch_size, 4, 10 * 10, 10])
         kernels = tf.nn.relu(kernels - 1e-12) + 1e-12
         if arg_softmax:
@@ -338,7 +338,7 @@ if __name__ == '__main__':
         args.input_path,
         20, .95, True, training=False)
     with tf.Session() as sess:
-        tf.train.start_queue_runners(sess)
+        threads = tf.train.start_queue_runners(sess)
         m = Model(sess, args.batch_size, args.g_loss, args.gdl, args.actions, args.l_ord, args.softmax)
         print('Model construction completed.')
         init_op = tf.global_variables_initializer()
