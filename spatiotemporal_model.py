@@ -171,7 +171,7 @@ class Model():
         kernels = tf.reshape(kernels, [self.batch_size, 4, 10 * 10, 10])
         kernels = tf.nn.relu(kernels - 1e-12) + 1e-12
         if arg_softmax:
-            kernels = tf.nn.softmax(kernels, dim=-1)
+            kernels = tf.nn.softmax(kernels, dim=2)
         else:
             normalizer = tf.reduce_sum(kernels, 2, keep_dims=True)
             kernels = kernels / normalizer
