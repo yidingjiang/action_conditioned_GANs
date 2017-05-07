@@ -49,7 +49,7 @@ class Model():
         elif arg_g_loss == 'adv':
             self.g_loss = g_adv_loss
         else:
-            self.g_loss = .01 * g_lp_loss + g_adv_loss
+            self.g_loss = g_lp_loss + g_adv_loss
         if arg_gdl:
             self.g_loss += .001 * self.gdl
 
@@ -71,10 +71,10 @@ class Model():
 
         # Make batch norm updates dependencies of optimization ops
         with tf.control_dependencies(self.g_update_ops):
-            self.g_opt_op = tf.train.AdamOptimizer(1e-3, name='g_opt').minimize(
+            self.g_opt_op = tf.train.AdamOptimizer(2e-4, name='g_opt').minimize(
                 self.g_loss, var_list=self.g_vars)
         with tf.control_dependencies(self.d_update_ops + self.clip_d):
-            self.d_opt_op = tf.train.AdamOptimizer(1e-3, name='d_opt').minimize(
+            self.d_opt_op = tf.train.AdamOptimizer(2e-4, name='d_opt').minimize(
                 self.d_loss, var_list=self.d_vars)
 
         if arg_g_loss == 'lp':
@@ -314,8 +314,8 @@ if __name__ == '__main__':
     parser.add_argument('input_path', type=str)
     parser.add_argument('output_path', type=str)
     parser.add_argument('--g_loss', type=str, default='lp')
-    parser.add_argument('--batch_size', type=int, default=4)
-    parser.add_argument('--iterations', type=int, default=10000)
+    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--iterations', type=int, default=20000)
     parser.add_argument('--actions', action='store_true')
     parser.add_argument('--gdl', action='store_true')
     parser.add_argument('--l_ord', type=int, default=2)
