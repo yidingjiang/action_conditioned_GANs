@@ -2,17 +2,18 @@ import argparse
 import os
 import tensorflow as tf
 import numpy as np
+from keras.layers.core import Dense
 from keras.layers.convolutional import Conv3D
-from keras.layers.normalization import BatchNormalization
 from keras_contrib.layers.convolutional import Deconvolution3D
 from utils import lrelu, build_tfrecord_input, save_samples, build_psnr, build_gdl_3d, record_hyperparameters
 
 
 class Model():
-    def __init__(self, sess, arg_g_loss, arg_gdl, arg_actions, arg_l_ord, arg_dilation, arg_softmax):
+    def __init__(self, sess, arg_batchsize, arg_g_loss, arg_gdl, arg_actions, arg_l_ord, arg_softmax):
+        self.batch_size = arg_batchsize
         self.sess = sess
-        self.sequence = tf.placeholder(tf.float32, [None, 6, 64, 64, 3], name='sequence_ph')
-        self.actions = tf.placeholder(tf.float32, [None, 6, 10], name='actions_ph')
+        self.sequence = tf.placeholder(tf.float32, [self.batch_size, 6, 64, 64, 3], name='sequence_ph')
+        self.actions = tf.placeholder(tf.float32, [self.batch_size, 6, 10], name='actions_ph')
         input_images = self.sequence[:,:2,:,:,:]
         tiled_actions = None
         d_actions = None
@@ -27,7 +28,7 @@ class Model():
             d_actions = tf.tile(self.actions[:,:,None,None,:], [1, 1, 64, 64, 1])
 
         with tf.variable_scope('g'):
-            self.g_out = self._build_generator(input_images, tiled_actions, arg_dilation, arg_softmax)
+            self.g_out = self._build_generator(input_images, tiled_actions, arg_softmax)
         with tf.variable_scope('d'):
             d_conv_layers = self._build_d_conv_layers()
             d_conv_layer_weights = [v for layer in d_conv_layers for v in layer.trainable_weights]
@@ -165,15 +166,39 @@ class Model():
         return out
 
 
+    def _cdna(self, prev_frame, transform_input, ksize, arg_softmax):
+        kernels = Dense(10 * 10 * 10)(transform_input)
+        kernels = tf.reshape(kernels, [self.batch_size, 4, 10 * 10, 10])
+        kernels = tf.nn.relu(kernels - 1e-12) + 1e-12
+        if arg_softmax:
+            kernels = tf.nn.softmax(kernels, dim=-1)
+        else:
+            normalizer = tf.reduce_sum(kernels, 2, keep_dims=True)
+            kernels = kernels / normalizer
+        kernels = tf.reshape(kernels, [self.batch_size, 4, 10, 10, 1, 10])
+        kernels = tf.tile(kernels, [1, 1, 1, 1, 3, 1])
+        collected_transforms = []
+        for j in range(self.batch_size):
+            transformed_images = []
+            for i in range(4):
+                kernel = kernels[j,i,:,:,:,:]
+                frame_i = tf.nn.depthwise_conv2d(prev_frame[j][None], kernel, [1, 1, 1, 1], 'SAME')
+                transformed_images.append(frame_i)
+            transformed_images = tf.concat(values=transformed_images, axis=0)
+            collected_transforms.append(transformed_images)
+        collected_transforms = tf.stack(collected_transforms, axis=0)
+        collected_transforms = tf.split(value=collected_transforms, axis=4, num_or_size_splits=10)
+        return collected_transforms
+
+
     def _transform(self, prev_frame, transform_input, ksize, arg_softmax):
-        batch_size = tf.shape(prev_frame)[0]
         patches = tf.extract_image_patches(
             prev_frame,
             ksizes=[1, ksize, ksize, 1],
             strides=[1, 1, 1, 1],
             rates=[1, 1, 1, 1],
             padding='SAME')
-        patches = tf.reshape(patches, [batch_size, 64, 64, ksize * ksize, 3])
+        patches = tf.reshape(patches, [self.batch_size, 64, 64, ksize * ksize, 3])
 
         transform_out = []
         for i in range(4):
@@ -189,15 +214,15 @@ class Model():
         return [tf.stack(transform_out, axis=1)]
 
 
-    def _build_generator(self, img_input, tiled_actions, arg_dilation, arg_softmax):
+    def _build_generator(self, img_input, tiled_actions, arg_softmax):
         prev_frame = img_input[:,1,:,:,:]
         ksize = 10
         conv_specs = [
-            (32, [1, 3, 3], [1, 1, 1]),
-            (64, [1, 3, 3], [1, 2, 2]),
-            (128, [1, 3, 3], [1, 4, 4]),
-            (256, [1, 3, 3], [1, 6, 6]),
-            (32, [2, 1, 1], [1, 1, 1])
+            (32, [1, 3, 3], [1, 2, 2]),
+            (64, [1, 3, 3], [1, 1, 1]),
+            (128, [1, 3, 3], [1, 2, 2]),
+            (256, [1, 3, 3], [1, 1, 1]),
+            (32, [2, 3, 3], [2, 2, 2])
         ]
         out = img_input
         for i, spec in enumerate(conv_specs):
@@ -205,8 +230,8 @@ class Model():
                 spec[0],
                 spec[1],
                 activation='relu',
-                padding='same' if i < len(conv_specs) - 1 else 'valid',
-                dilation_rate=spec[2] if arg_dilation else (1, 1, 1),
+                padding='same',
+                strides=spec[2],
                 name='conv{:d}'.format(i))(out)
             out = tf.layers.batch_normalization(
                 out,
@@ -218,7 +243,7 @@ class Model():
             32,
             [2, 1, 1],
             activation='relu',
-            output_shape=[None, 2, 64, 64, 32],
+            output_shape=[None, 2, 8, 8, 32],
             name='tconv1')(out)
         out = tf.layers.batch_normalization(
             out,
@@ -230,32 +255,53 @@ class Model():
             strides=[2, 1, 1],
             padding='same',
             activation='relu',
-            output_shape=[None, 4, 64, 64, 32],
+            output_shape=[None, 4, 8, 8, 32],
             name='tconv2')(out)
         out = tf.layers.batch_normalization(
             out,
             training=True,
             name='bn6')
-        transform_input = Conv3D(
-            ksize*ksize,
-            [4, 4, 4],
-            activation=None,
+        transform_input_dim = np.prod(out.get_shape().as_list()[1:])
+        transform_input = tf.reshape(out, [-1, transform_input_dim])
+        transforms = self._cdna(prev_frame, transform_input, ksize, arg_softmax)
+        out = Deconvolution3D(
+            32,
+            [1, 3, 3],
+            strides=[1, 2, 2],
+            activation='relu',
             padding='same',
-            name='transform_conv')(out)
-        transforms = self._transform(prev_frame, transform_input, ksize, arg_softmax)
-        masks = Conv3D(
-            2,
-            [4, 4, 4],
-            activation=None,
-            padding='same',
+            output_shape=[None, 4, 16, 16, 32],
             name='mask_conv1')(out)
+        out = tf.layers.batch_normalization(
+            out,
+            training=True,
+            name='bn7')
+        out = Deconvolution3D(
+            32,
+            [1, 3, 3],
+            strides=[1, 2, 2],
+            activation='relu',
+            padding='same',
+            output_shape=[None, 4, 32, 32, 32],
+            name='mask_conv2')(out)
+        out = tf.layers.batch_normalization(
+            out,
+            training=True,
+            name='bn8')
+        out = Deconvolution3D(
+            11,
+            [1, 3, 3],
+            strides=[1, 2, 2],
+            activation=None,
+            padding='same',
+            output_shape=[None, 4, 64, 64, 11],
+            name='mask_conv3')(out)
 
-        masks = tf.nn.softmax(masks, dim=-1)
-        mask_list = tf.split(masks, num_or_size_splits=2, axis=4)
-        output_frames = tf.stack(3 * [masks[:,:,:,:,0]], axis=-1) * tf.stack(4 * [prev_frame], axis=1)
+        masks = tf.nn.softmax(out, dim=-1)
+        mask_list = tf.split(masks, num_or_size_splits=11, axis=4)
+        output_frames = mask_list[0] * tf.stack(4 * [prev_frame], axis=1)
         for i, transform in enumerate(transforms):
-            mask = tf.stack(3*[masks[:,:,:,:,i+1]], axis=-1)
-            output_frames += mask * transforms[i]
+            output_frames += mask_list[i+1] * transforms[i]
         combined = [img_input, output_frames]
         final_output = tf.concat(values=combined, axis=1)
         # batchnorm update ops
@@ -274,7 +320,6 @@ if __name__ == '__main__':
     parser.add_argument('--l_ord', type=int, default=2)
     parser.add_argument('--load_model', type=str)
     parser.add_argument('--test_only', action='store_true')
-    parser.add_argument('--dilation', action='store_true')
     parser.add_argument('--softmax', action='store_true')
     args = parser.parse_args()
     train_output_path = os.path.join(args.output_path, 'train_output')
@@ -294,7 +339,7 @@ if __name__ == '__main__':
         20, .95, True, training=False)
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
-        m = Model(sess, args.g_loss, args.gdl, args.actions, args.l_ord, args.dilation, args.softmax)
+        m = Model(sess, args.batch_size, args.g_loss, args.gdl, args.actions, args.l_ord, args.softmax)
         print('Model construction completed.')
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
