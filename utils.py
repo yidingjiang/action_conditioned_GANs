@@ -646,7 +646,7 @@ def build_tfrecord_input(batch_size,
     crop_size = min(ORIGINAL_HEIGHT, ORIGINAL_WIDTH)
     image = tf.image.resize_image_with_crop_or_pad(image, crop_size, crop_size)
     image = tf.reshape(image, [1, crop_size, crop_size, COLOR_CHAN])
-    image = tf.image.resize_bicubic(image, [IMG_HEIGHT, IMG_WIDTH])
+    image = tf.image.resize_area(image, [IMG_HEIGHT, IMG_WIDTH])
     image = (tf.cast(image, tf.float32) / (255.0 / 2.)) - 1.
     image_seq.append(image)
 

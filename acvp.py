@@ -16,6 +16,7 @@ IMG_HEIGHT = 64
 BATCH_SIZE = 64
 ADAM_LR = 1e-3
 NORM_ORDER = 1
+L2_WEIGHT = 0.05
 
 def build_g_adv_loss(d_out_gen, arg_loss):
     if arg_loss == 'bce':
@@ -92,7 +93,7 @@ class Trainer():
         g_l2_loss = tf.norm(self.g_out - gt_output, ord=NORM_ORDER, axis=None, keep_dims=False, name='l1_difference')/BATCH_SIZE
 
         if arg_transform:
-            g_l2_loss *= 1
+            g_l2_loss *= L2_WEIGHT
             g_state_loss = tf.norm(self.g_state_out - gt_stateout, ord=2, axis=None, keep_dims=False)/BATCH_SIZE
             g_l2_loss += g_state_loss
 
