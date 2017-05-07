@@ -15,20 +15,13 @@ class Model():
         self.sequence = tf.placeholder(tf.float32, [self.batch_size, 6, 64, 64, 3], name='sequence_ph')
         self.actions = tf.placeholder(tf.float32, [self.batch_size, 6, 10], name='actions_ph')
         input_images = self.sequence[:,:2,:,:,:]
-        tiled_actions = None
+        g_actions = self.actions[:,1:5,:] if arg_actions else None
         d_actions = None
         if arg_actions:
-            actions_by_ts = []
-            for i in range(1, 5):
-                actions_by_ts.append(self.actions[:,i,:])
-            reshaped_actions = tf.concat(
-                axis=1, values=actions_by_ts)[:,None,None, None,:]
-            tiled_actions = tf.tile(
-                reshaped_actions, [1, 1, 64, 64, 1])
             d_actions = tf.tile(self.actions[:,:,None,None,:], [1, 1, 64, 64, 1])
 
         with tf.variable_scope('g'):
-            self.g_out = self._build_generator(input_images, tiled_actions, arg_softmax)
+            self.g_out = self._build_generator(input_images, g_actions, arg_softmax)
         with tf.variable_scope('d'):
             d_conv_layers = self._build_d_conv_layers()
             d_conv_layer_weights = [v for layer in d_conv_layers for v in layer.trainable_weights]
@@ -214,7 +207,7 @@ class Model():
         return [tf.stack(transform_out, axis=1)]
 
 
-    def _build_generator(self, img_input, tiled_actions, arg_softmax):
+    def _build_generator(self, img_input, actions, arg_softmax):
         prev_frame = img_input[:,1,:,:,:]
         ksize = 10
         conv_specs = [
@@ -237,8 +230,6 @@ class Model():
                 out,
                 training=True,
                 name='bn{:d}'.format(i))
-        if tiled_actions is not None:
-            out = tf.concat(values=[out, tiled_actions], axis=-1)
         out = Deconvolution3D(
             32,
             [2, 1, 1],
@@ -263,7 +254,14 @@ class Model():
             name='bn6')
         transform_input_dim = np.prod(out.get_shape().as_list()[1:])
         transform_input = tf.reshape(out, [-1, transform_input_dim])
+        if actions is not None:
+            action_input_dim = np.prod(actions.get_shape().as_list()[1:])
+            flattened_actions = tf.reshape(actions, [-1, action_input_dim])
+            transform_input = tf.concat(values=[transform_input, flattened_actions], axis=1)
         transforms = self._cdna(prev_frame, transform_input, ksize, arg_softmax)
+        if actions is not None:
+            tiled_actions = tf.tile(actions[:,:,None,None,:], multiples=[1, 1, 8, 8, 1])
+            out = tf.concat(values=[out, tiled_actions], axis=4)
         out = Deconvolution3D(
             32,
             [1, 3, 3],
