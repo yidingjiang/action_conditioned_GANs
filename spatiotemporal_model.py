@@ -77,6 +77,9 @@ class Model():
             self.d_opt_op = tf.train.AdamOptimizer(1e-3, name='d_opt').minimize(
                 self.d_loss, var_list=self.d_vars)
 
+        if arg_g_loss == 'lp':
+            self.d_opt_op = tf.no_op(name='d_opt')
+
         self.merged_summaries = tf.summary.merge_all()
 
 
