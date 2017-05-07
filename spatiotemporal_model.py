@@ -10,6 +10,7 @@ from utils import lrelu, build_tfrecord_input, save_samples, build_psnr, build_g
 
 class Model():
     def __init__(self, sess, arg_batchsize, arg_g_loss, arg_gdl, arg_actions, arg_l_ord, arg_softmax):
+        self.num_masks = 10
         self.batch_size = arg_batchsize
         self.sess = sess
         self.sequence = tf.placeholder(tf.float32, [self.batch_size, 6, 64, 64, 3], name='sequence_ph')
@@ -163,15 +164,16 @@ class Model():
 
 
     def _cdna(self, prev_frame, transform_input, ksize, arg_softmax):
-        kernels = Dense(4 * 10 * 10 * 10)(transform_input)
-        kernels = tf.reshape(kernels, [self.batch_size, 4, 10 * 10, 10])
+        num_transforms = self.num_masks - 1
+        kernels = Dense(4 * ksize * ksize * num_transforms)(transform_input)
+        kernels = tf.reshape(kernels, [self.batch_size, 4, ksize * ksize, num_transforms])
         kernels = tf.nn.relu(kernels - 1e-12) + 1e-12
         if arg_softmax:
             kernels = tf.nn.softmax(kernels, dim=2)
         else:
             normalizer = tf.reduce_sum(kernels, 2, keep_dims=True)
             kernels = kernels / normalizer
-        kernels = tf.reshape(kernels, [self.batch_size, 4, 10, 10, 1, 10])
+        kernels = tf.reshape(kernels, [self.batch_size, 4, ksize, ksize, 1, num_transforms])
         kernels = tf.tile(kernels, [1, 1, 1, 1, 3, 1])
         collected_transforms = []
         for j in range(self.batch_size):
@@ -183,7 +185,7 @@ class Model():
             transformed_images = tf.concat(values=transformed_images, axis=0)
             collected_transforms.append(transformed_images)
         collected_transforms = tf.stack(collected_transforms, axis=0)
-        collected_transforms = tf.split(value=collected_transforms, axis=4, num_or_size_splits=10)
+        collected_transforms = tf.split(value=collected_transforms, axis=4, num_or_size_splits=num_transforms)
         return collected_transforms
 
 
@@ -221,6 +223,7 @@ class Model():
             (32, [2, 3, 3], [2, 2, 2])
         ]
         out = img_input
+        hidden1 = None
         for i, spec in enumerate(conv_specs):
             out = Conv3D(
                 spec[0],
@@ -233,29 +236,10 @@ class Model():
                 out,
                 training=True,
                 name='bn{:d}'.format(i))
-        out = Deconvolution3D(
-            32,
-            [2, 1, 1],
-            activation='relu',
-            output_shape=[None, 2, 8, 8, 32],
-            name='tconv1')(out)
-        out = tf.layers.batch_normalization(
-            out,
-            training=True,
-            name='bn5')
-        out = Deconvolution3D(
-            32,
-            [4, 1, 1],
-            strides=[2, 1, 1],
-            padding='same',
-            activation='relu',
-            output_shape=[None, 4, 8, 8, 32],
-            name='tconv2')(out)
-        out = tf.layers.batch_normalization(
-            out,
-            training=True,
-            name='bn6')
-        transform_input_dim = np.prod(out.get_shape().as_list()[1:])
+            if i == 0:
+                hidden1 = out
+        transform_input_shape = out.get_shape().as_list()
+        transform_input_dim = np.prod(transform_input_shape[1:])
         transform_input = tf.reshape(out, [-1, transform_input_dim])
         if actions is not None:
             action_input_dim = np.prod(actions.get_shape().as_list()[1:])
@@ -263,43 +247,62 @@ class Model():
             transform_input = tf.concat(values=[transform_input, flattened_actions], axis=1)
         transforms = self._cdna(prev_frame, transform_input, ksize, arg_softmax)
         if actions is not None:
-            tiled_actions = tf.tile(actions[:,:,None,None,:], multiples=[1, 1, 8, 8, 1])
-            out = tf.concat(values=[out, tiled_actions], axis=4)
+            out = Dense(transform_input_dim)(transform_input)
+            out = tf.reshape(out, transform_input_shape)
+        out = Deconvolution3D(
+            32,
+            [2, 3, 3],
+            strides=[2, 2, 2],
+            activation='relu',
+            padding='same',
+            output_shape=[None, 2, 16, 16, 32],
+            name='mask_tconv1')(out)
+        out = tf.layers.batch_normalization(
+            out,
+            training=True,
+            name='bn5')
         out = Deconvolution3D(
             32,
             [1, 3, 3],
             strides=[1, 2, 2],
             activation='relu',
             padding='same',
-            output_shape=[None, 4, 16, 16, 32],
-            name='mask_conv1')(out)
+            output_shape=[None, 2, 32, 32, 32],
+            name='mask_tconv2')(out)
+        out = tf.layers.batch_normalization(
+            out,
+            training=True,
+            name='bn6')
+        out = tf.concat(values=[out, hidden1], axis=4) #skip
+        out = Deconvolution3D(
+            32,
+            [2, 3, 3],
+            strides=[2, 2, 2],
+            activation=None,
+            padding='same',
+            output_shape=[None, 4, 64, 64, 32],
+            name='mask_tconv3')(out)
         out = tf.layers.batch_normalization(
             out,
             training=True,
             name='bn7')
-        out = Deconvolution3D(
-            32,
-            [1, 3, 3],
-            strides=[1, 2, 2],
-            activation='relu',
+        masks = Conv3D(
+            self.num_masks + 1,
+            [1, 1, 1],
+            strides=[1, 1, 1],
             padding='same',
-            output_shape=[None, 4, 32, 32, 32],
-            name='mask_conv2')(out)
-        out = tf.layers.batch_normalization(
-            out,
-            training=True,
-            name='bn8')
-        out = Deconvolution3D(
-            11,
-            [1, 3, 3],
-            strides=[1, 2, 2],
-            activation=None,
+            name='mask_conv1')(out)
+        generated_image = Conv3D(
+            3,
+            [1, 1, 1],
+            strides=[1,1,1],
             padding='same',
-            output_shape=[None, 4, 64, 64, 11],
-            name='mask_conv3')(out)
+            activation='tanh',
+            name='generated1')(out)
+        transforms = [generated_image] + transforms
 
-        masks = tf.nn.softmax(out, dim=-1)
-        mask_list = tf.split(masks, num_or_size_splits=11, axis=4)
+        masks = tf.nn.softmax(masks, dim=-1)
+        mask_list = tf.split(masks, num_or_size_splits=self.num_masks+1, axis=4)
         output_frames = mask_list[0] * tf.stack(4 * [prev_frame], axis=1)
         for i, transform in enumerate(transforms):
             output_frames += mask_list[i+1] * transforms[i]
