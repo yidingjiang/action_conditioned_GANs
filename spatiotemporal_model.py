@@ -295,7 +295,7 @@ class Model():
         generated_image = Conv3D(
             3,
             [1, 3, 3],
-            dilation_rate=[1, 2, 2]
+            dilation_rate=[1, 2, 2],
             padding='same',
             activation='tanh',
             name='generated1')(out)
