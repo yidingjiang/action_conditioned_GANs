@@ -261,11 +261,11 @@ if __name__ == '__main__':
     sequence, actions = build_tfrecord_input(
         args.batch_size,
         args.input_path,
-        20, .95, True)
+        6, .95, True)
     test_sequence, test_actions = build_tfrecord_input(
         args.batch_size,
         args.input_path,
-        20, .95, True, training=False)
+        6, .95, True, training=False)
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
         m = Model(sess, args.g_loss, args.gdl, args.actions, args.l_ord, args.dilation, args.softmax)
@@ -277,20 +277,16 @@ if __name__ == '__main__':
             print('Loading model...')
             saver.restore(sess, tf.train.latest_checkpoint(args.load_model))
         if args.test_only:
-            for idx in range(14):
-                test_seq_batch = sess.run(test_sequence)[:,idx:idx+6,:,:,:]
-                test_actions_batch = sess.run(test_actions)[:,idx:idx+6,:]
-                test_g_out, test_summ = m.test_batch(test_seq_batch, test_actions_batch)
-                save_samples(args.output_path, test_seq_batch, test_g_out, idx, gif=True, individual=False)
+            test_seq_batch, test_actions_batch = sess.run([test_sequence, test_actions])
+            test_g_out, test_summ = m.test_batch(test_seq_batch, test_actions_batch)
+            save_samples(args.output_path, test_seq_batch, test_g_out, 0, gif=True, individual=False)
             exit()
         train_writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'train'), sess.graph)
         test_writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'test'))
         for i in range(args.iterations):
-            idx = np.random.choice(14)
-            seq_batch = sess.run(sequence)[:,idx:idx+6,:,:,:]
-            actions_batch = sess.run(actions)[:,idx:idx+6,:]
+            seq_batch, actions_batch = sess.run([sequence, actions])
             g_loss, g_out = m.train_g(seq_batch, actions_batch, output=(i%100==0))
             d_loss, summ = m.train_d(seq_batch, actions_batch, summarize=(i%100==0))
             if i % 100 == 0:
@@ -298,8 +294,7 @@ if __name__ == '__main__':
                 save_samples(train_output_path, seq_batch[:5], g_out[:5], i, gif=True, individual=False)
                 train_writer.add_summary(summ, i)
                 train_writer.flush()
-                test_seq_batch = sess.run(test_sequence)[:,6:12,:,:,:]
-                test_actions_batch = sess.run(test_actions)[:,6:12,:]
+                test_seq_batch, test_actions_batch = sess.run([test_sequence, test_actions])
                 test_g_out, test_summ = m.test_batch(test_seq_batch, test_actions_batch)
                 save_samples(test_output_path, test_seq_batch[:5], test_g_out[:5], i, gif=True, individual=False)
                 test_writer.add_summary(test_summ, i)
