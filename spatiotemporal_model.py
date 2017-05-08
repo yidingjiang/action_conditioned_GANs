@@ -9,7 +9,7 @@ from utils import lrelu, build_tfrecord_input, save_samples, build_psnr, build_g
 
 
 class Model():
-    def __init__(self, sess, arg_batchsize, arg_g_loss, arg_gdl, arg_actions, arg_l_ord, arg_softmax):
+    def __init__(self, sess, arg_batchsize, arg_g_loss, arg_gdl, arg_actions, arg_l_ord, arg_softmax, arg_lam_lp, arg_lam_adv):
         self.num_masks = 10
         self.batch_size = arg_batchsize
         self.sess = sess
@@ -50,7 +50,7 @@ class Model():
         elif arg_g_loss == 'adv':
             self.g_loss = g_adv_loss
         else:
-            self.g_loss = g_lp_loss + 0.1 * g_adv_loss
+            self.g_loss = arg_lam_lp * g_lp_loss + arg_lam_adv * g_adv_loss
         if arg_gdl:
             self.g_loss += .001 * self.gdl
 
@@ -294,8 +294,8 @@ class Model():
             name='mask_conv1')(out)
         generated_image = Conv3D(
             3,
-            [1, 1, 1],
-            strides=[1,1,1],
+            [1, 3, 3],
+            dilation_rate=[1, 2, 2]
             padding='same',
             activation='tanh',
             name='generated1')(out)
@@ -325,6 +325,8 @@ if __name__ == '__main__':
     parser.add_argument('--load_model', type=str)
     parser.add_argument('--test_only', action='store_true')
     parser.add_argument('--softmax', action='store_true')
+    parser.add_argument('--lam_lp', type=float, default=.1)
+    parser.add_argument('--lam_adv', type=float, default=1.0)
     args = parser.parse_args()
     train_output_path = os.path.join(args.output_path, 'train_output')
     test_output_path = os.path.join(args.output_path, 'test_output')
@@ -343,7 +345,7 @@ if __name__ == '__main__':
         6, .95, True, training=False)
     with tf.Session() as sess:
         threads = tf.train.start_queue_runners(sess)
-        m = Model(sess, args.batch_size, args.g_loss, args.gdl, args.actions, args.l_ord, args.softmax)
+        m = Model(sess, args.batch_size, args.g_loss, args.gdl, args.actions, args.l_ord, args.softmax, args.lam_lp, args.lam_adv)
         print('Model construction completed.')
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
