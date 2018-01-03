@@ -179,6 +179,27 @@ class Trainer():
             })
         return gen_next_frames, gen_next_state, summ
 
+    def test2(self, input_images, test_next_frame, test_actions):
+
+        predicted = []
+        current_frame = input_images[:,0,:,:,:]
+        current_state = test_actions[:,0,5:]
+        for j in range(0, 6):
+            test_output, test_state, test_summ = self.test(current_frame,
+                                                    test_next_frame[:,j*2,:,:,:],
+                                                    np.concatenate((np.squeeze(test_actions[:,j*2,:5]), current_state), axis=1))
+            if j==0:
+                recorded_summ = test_summ
+
+            predicted.append(test_output)
+            current_frame = test_output
+            current_state = test_state
+
+        # test_output, test_summ = trainer.test(test_input, test_next_frame, test_actions)
+        predicted = np.array(predicted)
+        predicted = np.transpose(predicted, (1,0,2,3,4))
+        return predicted, current_frame[1:7]
+
 
 def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention):
     img_data_train, action_data_train = build_tfrecord_input(
