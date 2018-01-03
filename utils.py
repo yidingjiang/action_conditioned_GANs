@@ -90,14 +90,14 @@ def cdna_transformation(prev_image, cdna_input, num_masks, color_channels):
     """
     batch_size = int(cdna_input.get_shape()[0])
 
-      # Predict kernels using linear function of last hidden layer.
+    # Predict kernels using linear function of last hidden layer.
     cdna_kerns = slim.layers.fully_connected(
         cdna_input,
         DNA_KERN_SIZE * DNA_KERN_SIZE * num_masks,
         scope='cdna_params',
         activation_fn=None)
 
-      # Reshape and normalize.
+    # Reshape and normalize.
     cdna_kerns = tf.reshape(
         cdna_kerns, [batch_size, DNA_KERN_SIZE, DNA_KERN_SIZE, 1, num_masks])
     cdna_kerns = tf.nn.relu(cdna_kerns - RELU_SHIFT) + RELU_SHIFT
@@ -344,15 +344,9 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
                                                     strides=[1, 1, 1, 1],
                                                     rates=[1, 1, 1, 1],
                                                     padding='SAME')
-<<<<<<< HEAD
 
         input_extracted = tf.reshape(input_extracted,
-                                        [batch_size, 64, 64, ksize*ksize, 3])
-=======
-        print(input_extracted.get_shape())
-        input_extracted = tf.reshape(input_extracted,
                                        [batch_size, 64, 64, ksize*ksize, 3])
->>>>>>> experiment
         out = tf.stack([out]*3, axis=4)
         out *= input_extracted
         out = tf.reduce_sum(out, 3)
@@ -734,11 +728,7 @@ def build_tfrecord_input(batch_size,
 
   image_seq, state_seq, action_seq = [], [], []
 
-<<<<<<< HEAD
-  for i in range(6, 21, 4):
-=======
   for i in range(6, 20, 2):
->>>>>>> experiment
     image_name = 'move/' + str(i) + '/image/encoded'
     action_name = 'move/' + str(i) + '/commanded_pose/vec_pitch_yaw'
     state_name = 'move/' + str(i) + '/endeffector/vec_pitch_yaw'
