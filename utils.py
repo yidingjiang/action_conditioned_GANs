@@ -4,18 +4,33 @@ from tensorflow import gfile
 import numpy as np
 import os
 import matplotlib.pyplot as plt
-
+import PIL
+import imageio
 
 DNA_KERN_SIZE = 5
 RELU_SHIFT = 1e-12
 
+def build_all_mask(num_frame):
+    masks = []
+    for i in range(num_frame-1):
+        m = [0]*num_frame
+        m[i]=1
+        masks.append(m)
+    return np.array(masks).astype(bool)
 
-def get_batch(sess, img_tensor, action_state_tensor, batch_size):
-    img, action = sess.run([img_tensor, action_state_tensor])
-    return img[:,:,:,:,:], img[:,:,:,:,:], action
+# def get_batch(sess, img_tensor, action_state_tensor, batch_size, next_state_tensor=None):
+#     if next_state_tensor is None:
+#         img, action = sess.run([img_tensor, action_state_tensor])
+#         return img[:,0,:,:,:], img[:,1,:,:,:], action, None
+#     else:
+#         img, action, state = sess.run([img_tensor, action_state_tensor, next_state_tensor])
+#         return img[:,0,:,:,:], img[:,1,:,:,:], action, state
 
+def get_batch(sess, img_tensor, action_state_tensor, batch_size, next_state_tensor=None):
+    img, action, state = sess.run([img_tensor, action_state_tensor, next_state_tensor])
+    return img[:,:,:,:,:], img[:,:,:,:,:], action, state
 
-def save_samples(output_path, input_sample, generated_sample, gt, sample_number):
+def save_samples(output_path, input_sample, generated_sample, gt, sample_number, gif=False):
     input_sample = (255. / 2) * (input_sample + 1.)
     input_sample = input_sample.astype(np.uint8)
     generated_sample = (255. / 2) * (generated_sample + 1.)
@@ -32,21 +47,27 @@ def save_samples(output_path, input_sample, generated_sample, gt, sample_number)
         if not os.path.exists(vid_folder):
             os.makedirs(vid_folder)
         vid = input_sample[i]
-        for j in range(vid.shape[0]):
-            save_path = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
-            frame = vid[j]
-            plt.imsave(save_path, frame)
+        if gif:
+            imageio.mimsave(os.path.join(vid_folder, 'gt.gif'), vid, duration=.25)
+        else:
+            for j in range(int(vid.shape[0])):
+                save_path = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
+                frame = vid[j]
+                plt.imsave(save_path, frame)
         vid = generated_sample[i]
-        for j in range(vid.shape[0]):
-            save_path = os.path.join(vid_folder, 'generated{:d}.png'.format(j))
-            frame = vid[j]
-            plt.imsave(save_path, frame)
-        vid = gt[i]
-        for j in range(vid.shape[0]):
-            save_path = os.path.join(vid_folder, 'gt{:d}.png'.format(j))
-            frame = vid[j]
-            plt.imsave(save_path, frame)
-
+        if gif:
+            imageio.mimsave(os.path.join(vid_folder, 'generated.gif'), vid, duration=.25)
+        else:
+            for j in range(int(vid.shape[0])):
+                save_path = os.path.join(vid_folder, 'generated{:d}.png'.format(j))
+                frame = vid[j]
+                plt.imsave(save_path, frame)
+        if not gif:
+            vid = gt[i]
+            for j in range(int(vid.shape[0])):
+                save_path = os.path.join(vid_folder, 'ground_truth{:d}.png'.format(j))
+                frame = vid[j]
+                plt.imsave(save_path, frame)
 
 def build_psnr(true, pred):
     return 10.0 * tf.log(1.0 / tf.losses.mean_squared_error(true, pred)) / tf.log(10.0)
@@ -264,6 +285,39 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
             padding='SAME',
             normalizer_fn=slim.batch_norm,
             reuse=reuse)
+
+        state_out = slim.conv2d(
+            out,
+            32,
+            [3, 3],
+            activation_fn=tf.nn.relu,
+            stride=2,
+            scope='sconv3',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        state_out = slim.conv2d(
+            state_out,
+            16,
+            [3, 3],
+            activation_fn=tf.nn.relu,
+            stride=2,
+            scope='sconv4',
+            padding='SAME',
+            normalizer_fn=slim.batch_norm,
+            reuse=reuse)
+        print(state_out.shape)
+        state_out = slim.conv2d(
+            state_out,
+            5,
+            [4, 4],
+            activation_fn=None,
+            stride=1,
+            scope='sconv5',
+            padding='VALID',
+            normalizer_fn=None,
+            reuse=reuse)
+
         out = slim.conv2d_transpose(
             out,
             128,
@@ -290,14 +344,20 @@ def build_generator_transform(images, actions, batch_size, reuse=False, color_ch
                                                     strides=[1, 1, 1, 1],
                                                     rates=[1, 1, 1, 1],
                                                     padding='SAME')
+<<<<<<< HEAD
 
         input_extracted = tf.reshape(input_extracted,
                                         [batch_size, 64, 64, ksize*ksize, 3])
+=======
+        print(input_extracted.get_shape())
+        input_extracted = tf.reshape(input_extracted,
+                                       [batch_size, 64, 64, ksize*ksize, 3])
+>>>>>>> experiment
         out = tf.stack([out]*3, axis=4)
         out *= input_extracted
         out = tf.reduce_sum(out, 3)
 
-    return out
+    return out, tf.squeeze(state_out)
 
 def build_generator(images, actions, reuse=False):
     with tf.variable_scope('g', reuse=reuse):
@@ -674,7 +734,11 @@ def build_tfrecord_input(batch_size,
 
   image_seq, state_seq, action_seq = [], [], []
 
+<<<<<<< HEAD
   for i in range(6, 21, 4):
+=======
+  for i in range(6, 20, 2):
+>>>>>>> experiment
     image_name = 'move/' + str(i) + '/image/encoded'
     action_name = 'move/' + str(i) + '/commanded_pose/vec_pitch_yaw'
     state_name = 'move/' + str(i) + '/endeffector/vec_pitch_yaw'
@@ -696,7 +760,7 @@ def build_tfrecord_input(batch_size,
     crop_size = min(ORIGINAL_HEIGHT, ORIGINAL_WIDTH)
     image = tf.image.resize_image_with_crop_or_pad(image, crop_size, crop_size)
     image = tf.reshape(image, [1, crop_size, crop_size, COLOR_CHAN])
-    image = tf.image.resize_bicubic(image, [IMG_HEIGHT, IMG_WIDTH])
+    image = tf.image.resize_area(image, [IMG_HEIGHT, IMG_WIDTH])
     image = (tf.cast(image, tf.float32) / (255.0 / 2.)) - 1.
     image_seq.append(image)
 

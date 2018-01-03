@@ -13,7 +13,14 @@ np.random.seed(7)
 HISTORY_LENGTH = 1
 IMG_WIDTH = 64
 IMG_HEIGHT = 64
+<<<<<<< HEAD
 BATCH_SIZE = 32
+=======
+BATCH_SIZE = 64
+ADAM_LR = 1e-3
+NORM_ORDER = 1
+L2_WEIGHT = 0.05
+>>>>>>> experiment
 
 def build_g_adv_loss(d_out_gen, arg_loss):
     if arg_loss == 'bce':
@@ -52,6 +59,10 @@ class Trainer():
             tf.float32,
             [BATCH_SIZE, 10],
             name='action')
+        self.next_state = tf.placeholder(
+            tf.float32,
+            [BATCH_SIZE,5],
+            name='next_state')
 
         reshaped_actions_raw = tf.reshape(self.action_ph, [tf.shape(self.action_ph)[0], 1, 1, 10])
         reshaped_actions = tf.tile(reshaped_actions_raw, [1, 4, 4, 1])
@@ -64,11 +75,16 @@ class Trainer():
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
         elif arg_transform:
+<<<<<<< HEAD
             reshaped_actions = tf.tile(reshaped_actions_raw, [1, 64, 64, 1])
             reshaped_actions_d = tf.tile(reshaped_actions_raw, [1, 16, 16, 1])
             self.g_out = build_generator_transform_no_stride(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE, ksize=10)
+=======
+            self.g_out, self.g_state_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE, ksize=6)
+>>>>>>> experiment
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
+            gt_stateout = self.next_state
         else:
             self.g_out = build_generator(self.img_ph, reshaped_actions)
             self.g_next_frame = self.g_out
@@ -84,10 +100,16 @@ class Trainer():
             reuse=True)
 
         g_psnr = build_psnr(self.next_frame_ph, self.g_next_frame)
+<<<<<<< HEAD
         g_l2_loss = tf.norm(self.g_out - gt_output, ord=2, axis=None, keep_dims=False, name='difference_norm')/BATCH_SIZE
+=======
+        g_l2_loss = tf.norm(self.g_out - gt_output, ord=NORM_ORDER, axis=None, keep_dims=False, name='l1_difference')/BATCH_SIZE
+>>>>>>> experiment
 
         if arg_transform:
-            g_l2_loss *= 1
+            g_l2_loss *= L2_WEIGHT
+            g_state_loss = tf.norm(self.g_state_out - gt_stateout, ord=2, axis=None, keep_dims=False)/BATCH_SIZE
+            g_l2_loss += g_state_loss
 
         if arg_adv:
             g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
@@ -105,7 +127,7 @@ class Trainer():
             lr = 5e-5
         else:
             optimizer = tf.train.AdamOptimizer
-            lr = 1e-3
+            lr = ADAM_LR
 
         self.g_opt_op = optimizer(
             lr,
@@ -120,26 +142,30 @@ class Trainer():
         d_loss_summary = tf.summary.scalar('discriminator_loss', self.d_loss)
         g_loss_summary = tf.summary.scalar('g_loss', self.g_loss)
         g_l2_loss_summary = tf.summary.scalar('g_l2_loss', g_l2_loss)
+#        g_state_loss_summary = tf.summary.scalar('g_state_loss', g_state_loss)
+
         if arg_adv:
             g_adv_loss_summary = tf.summary.scalar('g_adv_loss', g_adv_loss)
         psnr_summary = tf.summary.scalar('g_psnr', g_psnr)
         self.merged_summaries = tf.summary.merge_all()
 
 
-    def pretrain_g(self, input_images, next_frame, actions):
+    def pretrain_g(self, input_images, next_frame, actions, state):
         _, g_res = self.sess.run([self.g_pretrain_opt_op, self.g_loss], feed_dict={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame,
-            self.action_ph: actions
+            self.action_ph: actions,
+            self.next_state: state
         })
         return g_res
 
 
-    def train_g(self, input_images, next_frame, actions):
+    def train_g(self, input_images, next_frame, actions, state):
         _, gen_next_frames = self.sess.run([self.g_opt_op, self.g_next_frame], feed_dict={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame,
-            self.action_ph: actions
+            self.action_ph: actions,
+            self.next_state: state
         })
         return gen_next_frames
 
@@ -148,7 +174,8 @@ class Trainer():
         fd={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame,
-            self.action_ph: actions
+            self.action_ph: actions,
+            self.next_state: np.zeros((BATCH_SIZE, 5))
         }
         if summarize:
             _, summ, _ = self.sess.run([self.d_opt_op, self.merged_summaries, self.clip_d], feed_dict=fd)
@@ -158,12 +185,34 @@ class Trainer():
             return None
 
     def test(self, input_images, next_frame, actions):
-        gen_next_frames, summ = self.sess.run([self.g_next_frame, self.merged_summaries], feed_dict={
+        gen_next_frames, gen_next_state, summ = self.sess.run([self.g_next_frame, self.g_state_out, self.merged_summaries], feed_dict={
             self.img_ph: input_images,
             self.next_frame_ph: next_frame,
-            self.action_ph: actions
+            self.action_ph: actions,
+            self.next_state: np.zeros((BATCH_SIZE, 5))
             })
-        return gen_next_frames, summ
+        return gen_next_frames, gen_next_state, summ
+
+    def test2(self, input_images, test_next_frame, test_actions):
+
+        predicted = []
+        current_frame = input_images[:,0,:,:,:]
+        current_state = test_actions[:,0,5:]
+        for j in range(0, 6):
+            test_output, test_state, test_summ = self.test(current_frame,
+                                                    test_next_frame[:,j*2,:,:,:],
+                                                    np.concatenate((np.squeeze(test_actions[:,j*2,:5]), current_state), axis=1))
+            if j==0:
+                recorded_summ = test_summ
+
+            predicted.append(test_output)
+            current_frame = test_output
+            current_state = test_state
+
+        # test_output, test_summ = trainer.test(test_input, test_next_frame, test_actions)
+        predicted = np.array(predicted)
+        predicted = np.transpose(predicted, (1,0,2,3,4))
+        return predicted, current_frame[1:7]
 
 
 def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention):
@@ -176,11 +225,22 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
         input_path,
         1 + HISTORY_LENGTH, .9, True, training=False)
 
+<<<<<<< HEAD
+=======
+    next_state_test = tf.squeeze(action_data_test[:,:,5:])
+    next_state_train = tf.squeeze(action_data_train[:,:,5:])
+    # action_data_train = tf.squeeze(action_data_train[:,0,:])
+    # action_data_test = tf.squeeze(action_data_test[:,0,:])
+
+    boolean_mask = build_all_mask(img_data_train.shape[1])
+    # print(len(boolean_mask))
+>>>>>>> experiment
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
         trainer = Trainer(sess, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
+
         writer = tf.summary.FileWriter(
             os.path.join(log_dir, 'train'), sess.graph)
         test_writer = tf.summary.FileWriter(
@@ -193,6 +253,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
             D_per_G = 1
 
         for i in range(60000):
+<<<<<<< HEAD
             if i < 10:
                 input_batch, next_frame_batch, action_batch = get_batch(
                     sess,
@@ -206,13 +267,32 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                 gen_next_frames = trainer.pretrain_g(input_batch[:,start_index,:,:,:],
                                                         next_frame_batch[:,end,:,:,:],
                                                         action_batch[:,start_index,:])
-                print('pre-train iter: '+str(i))
-                continue
-            for j in range(D_per_G):
-                input_batch, next_frame_batch, action_batch = get_batch(
+=======
+            if i < 20:
+                input_batch, next_frame_batch, action_batch, state_batch = get_batch(
                     sess,
                     img_data_train,
                     action_data_train,
+                    BATCH_SIZE,
+                    next_state_train)
+
+                start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
+                end_mask = np.roll(start_mask, 1, axis=1)
+
+                gen_next_frames = trainer.pretrain_g(input_batch[start_mask],
+                                                        next_frame_batch[end_mask],
+                                                        action_batch[start_mask],
+                                                        state_batch[end_mask])
+>>>>>>> experiment
+                print('pre-train iter: '+str(i))
+                continue
+
+            for j in range(D_per_G):
+                input_batch, next_frame_batch, action_batch, state_batch = get_batch(
+                    sess,
+                    img_data_train,
+                    action_data_train,
+<<<<<<< HEAD
                     BATCH_SIZE)
 
                 make_summ = (i % 100 == 0) and (j == D_per_G-1)
@@ -246,14 +326,44 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                             np.expand_dims(gen_next_frames[:16,:,:,:], axis=1),
                             np.expand_dims(next_frame_batch[:16,end,:,:,:], axis=1),
                             i)
+=======
+                    BATCH_SIZE,
+                    next_state_train)
+
+                start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
+                end_mask = np.roll(start_mask, 1, axis=1)
+
+                make_summ = (i % 100 == 0) and (j==D_per_G-1)
+                summ = trainer.train_d(input_batch[start_mask],
+                                        next_frame_batch[end_mask],
+                                        action_batch[start_mask],
+                                        summarize=make_summ)
+            start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
+            end_mask = np.roll(start_mask, 1, axis=1)
+            gen_next_frames = trainer.train_g(input_batch[start_mask],
+                                                next_frame_batch[end_mask],
+                                                action_batch[start_mask],
+                                                state_batch[end_mask])
+
+            if i % 100 == 0:
+                print('Iteration {:d}'.format(i))
+          #      start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
+           #     end_mask = np.roll(start_mask, 1, axis=1)
+                save_samples(output_path,
+                    np.expand_dims(input_batch[start_mask][:32], axis=1),
+                    np.expand_dims(gen_next_frames[:32], axis=1),
+                    np.expand_dims(next_frame_batch[end_mask][:32], axis=1),
+                    i)
+>>>>>>> experiment
                 saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
                 writer.add_summary(summ, i)
                 writer.flush()
             if i % 500 == 0:
-                test_input, test_next_frame, test_actions = get_batch(
+                test_input, test_next_frame, test_actions, state_batch = get_batch(
                     sess,
                     img_data_test,
                     action_data_test,
+<<<<<<< HEAD
                     BATCH_SIZE)
 
                 predicted = []
@@ -262,11 +372,24 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                     test_output, test_summ = trainer.test(current_frame,
                                                             test_next_frame[:,j,:,:,:],
                                                             test_actions[:,j,:])
+=======
+                    BATCH_SIZE,
+                    next_state_train)
+
+                predicted = []
+                current_frame = test_input[:,0,:,:,:]
+                current_state = state_batch[:,0]
+                for j in range(0, test_input.shape[1]-1):
+                    test_output, test_state, test_summ = trainer.test(current_frame,
+                                                            test_next_frame[:,j,:,:,:],
+                                                            np.concatenate((np.squeeze(test_actions[:,j,:5]), current_state), axis=1))
+>>>>>>> experiment
                     if j==0:
                         recorded_summ = test_summ
 
                     predicted.append(test_output)
                     current_frame = test_output
+<<<<<<< HEAD
 
                 predicted = np.array(predicted)
                 predicted = np.transpose(predicted, (1,0,2,3,4))
@@ -276,6 +399,19 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                                 test_next_frame[:4], 
                                 i)
                 test_writer.add_summary(recorded_summ, i)
+=======
+                    current_state = test_state
+
+                # test_output, test_summ = trainer.test(test_input, test_next_frame, test_actions)
+                predicted = np.array(predicted)
+                predicted = np.transpose(predicted, (1,0,2,3,4))
+                save_samples(test_output_path,
+                                test_input[:16],
+                                predicted[:16],
+                                test_next_frame[:16],
+                                i)
+                test_writer.add_summary(test_summ, i)
+>>>>>>> experiment
 
 
 if __name__ == '__main__':
