@@ -7,7 +7,7 @@ import os
 import argparse
 import random
 
-from utils import *
+from util import *
 from ops import *
 from models import *
 
@@ -286,7 +286,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                     test_output, test_state, test_summ = trainer.test(current_frame,
                                                             		  test_next_frame[:,j,:,:,:],
                                                             		  acs)
-                    
+
                     if j==0:
                         recorded_summ = test_summ
 

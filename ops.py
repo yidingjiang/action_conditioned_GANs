@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import PIL
 import imageio
 
+from util import *
+
 DNA_KERN_SIZE = 5
 RELU_SHIFT = 1e-12
 
