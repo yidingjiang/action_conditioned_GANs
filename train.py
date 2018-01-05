@@ -6,7 +6,10 @@ import matplotlib.pyplot as plt
 import os
 import argparse
 import random
+
 from utils import *
+from ops import *
+from models import *
 
 np.random.seed(7)
 
@@ -18,29 +21,11 @@ ADAM_LR = 1e-3
 NORM_ORDER = 1
 L2_WEIGHT = 0.05
 
-def build_g_adv_loss(d_out_gen, arg_loss):
-    if arg_loss == 'bce':
-        return tf.losses.sigmoid_cross_entropy(
-            tf.ones_like(d_out_gen), d_out_gen)
-    else:
-        return tf.reduce_mean(d_out_gen)
-
-def build_d_loss(d_out_direct, d_out_gen, arg_loss):
-    if arg_loss == 'bce':
-        d_direct_loss = tf.losses.sigmoid_cross_entropy(
-            0.9 * tf.ones_like(d_out_direct), d_out_direct)
-        d_gen_loss = tf.losses.sigmoid_cross_entropy(
-            tf.zeros_like(d_out_gen), d_out_gen)
-    else:
-        d_direct_loss = tf.reduce_mean(d_out_direct)
-        d_gen_loss = -tf.reduce_mean(d_out_gen)
-    d_direct_loss_summary = tf.summary.scalar('discriminator_direct_loss', d_direct_loss)
-    d_gen_loss_summary = tf.summary.scalar('discriminator_gen_loss', d_gen_loss)
-    return d_direct_loss + d_gen_loss
-
+PRETRAIN_ITER = 20
+TRAIN_ITER = 60000
 
 class Trainer():
-    def __init__(self, sess, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention):
+    def __init__(self, sess, arg_adv, arg_loss, arg_opt, arg_transform):
         self.sess = sess
 
         self.img_ph = tf.placeholder(
@@ -64,14 +49,9 @@ class Trainer():
         reshaped_actions = tf.tile(reshaped_actions_raw, [1, 4, 4, 1])
         reshaped_actions_d = tf.tile(reshaped_actions_raw, [1, 4, 4, 1])
 
-        if arg_attention:
-            self.foreground, self.mask, self.background = build_generator_atn(self.img_ph, reshaped_actions)
-            negative_mask = tf.ones_like(self.mask) - self.mask
-            self.g_out = tf.multiply(self.mask, self.foreground) + tf.multiply(negative_mask, self.background)
-            self.g_next_frame = self.g_out
-            gt_output = self.next_frame_ph
-        elif arg_transform:
-            self.g_out, self.g_state_out = build_generator_transform(self.img_ph, reshaped_actions, batch_size=BATCH_SIZE, ksize=6)
+        if arg_transform:
+            self.g_out, self.g_state_out = build_generator_transform(self.img_ph, reshaped_actions, 
+            														 batch_size=BATCH_SIZE, ksize=6)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
             gt_stateout = self.next_state
@@ -84,7 +64,7 @@ class Trainer():
             tf.concat(values=[self.img_ph, self.g_next_frame], axis=3),
             reshaped_actions_d,
             reuse=False)
-        self.d_out_direct = build_discriminator(
+        self.d_out_real = build_discriminator(
             tf.concat(values=[self.img_ph, self.next_frame_ph], axis=3),
             reshaped_actions_d,
             reuse=True)
@@ -96,34 +76,30 @@ class Trainer():
             g_l2_loss *= L2_WEIGHT
             g_state_loss = tf.norm(self.g_state_out - gt_stateout, ord=2, axis=None, keep_dims=False)/BATCH_SIZE
             g_l2_loss += g_state_loss
-
         if arg_adv:
             g_adv_loss = build_g_adv_loss(self.d_out_gen, arg_loss)
             self.g_loss = g_l2_loss + g_adv_loss + build_gdl(self.next_frame_ph, self.g_next_frame)
         else:
             self.g_loss = g_l2_loss
 
-        self.d_loss = build_d_loss(self.d_out_direct, self.d_out_gen, arg_loss)
+        self.d_loss = build_d_loss(self.d_out_real, self.d_out_gen, arg_loss)
 
         self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g')
         self.d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd')
         self.clip_d = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in self.d_vars]
+
         if arg_opt == 'rmsprop':
             optimizer = tf.train.RMSPropOptimizer
             lr = 5e-5
-        else:
+        elif arg_opt = 'adam':
             optimizer = tf.train.AdamOptimizer
             lr = ADAM_LR
+        else:
+        	raise ValueError('unexpected opt argument')
 
-        self.g_opt_op = optimizer(
-            lr,
-            name='g_opt').minimize(self.g_loss, var_list=self.g_vars)
-        self.g_pretrain_opt_op = optimizer(
-            lr,
-            name='g_pretrain_opt').minimize(g_l2_loss, var_list=self.g_vars)
-        self.d_opt_op = optimizer(
-            lr,
-            name='d_opt').minimize(self.d_loss, var_list=self.d_vars)
+        self.g_opt_op = optimizer(lr, name='g_opt').minimize(self.g_loss, var_list=self.g_vars)
+        self.g_pretrain_opt_op = optimizer(lr, name='g_pretrain_opt').minimize(g_l2_loss, var_list=self.g_vars)
+        self.d_opt_op = optimizer(lr, name='d_opt').minimize(self.d_loss, var_list=self.d_vars)
 
         d_loss_summary = tf.summary.scalar('discriminator_loss', self.d_loss)
         g_loss_summary = tf.summary.scalar('g_loss', self.g_loss)
@@ -171,26 +147,28 @@ class Trainer():
             return None
 
     def test(self, input_images, next_frame, actions):
-        gen_next_frames, gen_next_state, summ = self.sess.run([self.g_next_frame, self.g_state_out, self.merged_summaries], feed_dict={
-            self.img_ph: input_images,
-            self.next_frame_ph: next_frame,
-            self.action_ph: actions,
-            self.next_state: np.zeros((BATCH_SIZE, 5))
-            })
+    	tensors = [self.g_next_frame, self.g_state_out, self.merged_summaries]
+    	fd = {
+    		  self.img_ph: input_images,
+              self.next_frame_ph: next_frame,
+              self.action_ph: actions,
+              self.next_state: np.zeros((BATCH_SIZE, 5))
+             }
+        gen_next_frames, gen_next_state, summ = self.sess.run(tensors, feed_dict=fd)
         return gen_next_frames, gen_next_state, summ
 
-    def test2(self, input_images, test_next_frame, test_actions):
+    def test_sequence(self, input_images, test_next_frame, test_actions):
 
         predicted = []
         current_frame = input_images[:,0,:,:,:]
         current_state = test_actions[:,0,5:]
         for j in range(0, 6):
+        	acs = np.concatenate((np.squeeze(test_actions[:,j*2,:5]), current_state), axis=1)
             test_output, test_state, test_summ = self.test(current_frame,
-                                                    test_next_frame[:,j*2,:,:,:],
-                                                    np.concatenate((np.squeeze(test_actions[:,j*2,:5]), current_state), axis=1))
+                                                    	   test_next_frame[:,j*2,:,:,:],
+                                                    	   acs)
             if j==0:
                 recorded_summ = test_summ
-
             predicted.append(test_output)
             current_frame = test_output
             current_state = test_state
@@ -235,9 +213,8 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
         else:
             D_per_G = 1
 
-        for i in range(60000):
-
-            if i < 20:
+        for i in range(TRAIN_ITER):
+            if i < PRETRAIN_ITER:
                 input_batch, next_frame_batch, action_batch, state_batch = get_batch(
                     sess,
                     img_data_train,
@@ -271,6 +248,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                                         next_frame_batch[end_mask],
                                         action_batch[start_mask],
                                         summarize=make_summ)
+
             start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
             end_mask = np.roll(start_mask, 1, axis=1)
             gen_next_frames = trainer.train_g(input_batch[start_mask],
@@ -280,7 +258,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
 
             if i % 100 == 0:
                 print('Iteration {:d}'.format(i))
-          #      start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
+           #     start_mask = boolean_mask[np.random.randint(0,len(boolean_mask),size=BATCH_SIZE)]
            #     end_mask = np.roll(start_mask, 1, axis=1)
                 save_samples(output_path,
                     np.expand_dims(input_batch[start_mask][:32], axis=1),
@@ -290,6 +268,7 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                 saver.save(sess, os.path.join(model_dir, 'model{:d}').format(i))
                 writer.add_summary(summ, i)
                 writer.flush()
+
             if i % 500 == 0:
                 test_input, test_next_frame, test_actions, state_batch = get_batch(
                     sess,
@@ -301,10 +280,13 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                 predicted = []
                 current_frame = test_input[:,0,:,:,:]
                 current_state = state_batch[:,0]
+
                 for j in range(0, test_input.shape[1]-1):
+                	acs = np.concatenate((np.squeeze(test_actions[:,j,:5]), current_state), axis=1)
                     test_output, test_state, test_summ = trainer.test(current_frame,
-                                                            test_next_frame[:,j,:,:,:],
-                                                            np.concatenate((np.squeeze(test_actions[:,j,:5]), current_state), axis=1))
+                                                            		  test_next_frame[:,j,:,:,:],
+                                                            		  acs)
+                    
                     if j==0:
                         recorded_summ = test_summ
 
@@ -316,13 +298,11 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                 predicted = np.array(predicted)
                 predicted = np.transpose(predicted, (1,0,2,3,4))
                 save_samples(test_output_path,
-                                test_input[:16],
-                                predicted[:16],
-                                test_next_frame[:16],
-                                i)
+                             test_input[:16],
+                             predicted[:16],
+                             test_next_frame[:16],
+                             i)
                 test_writer.add_summary(test_summ, i)
-
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -332,7 +312,6 @@ if __name__ == '__main__':
     parser.add_argument('--loss', type=str, default='wass')
     parser.add_argument('--opt', type=str, default='rmsprop')
     parser.add_argument('--transform', action='store_true')
-    parser.add_argument('--attention', action='store_true')
     args = parser.parse_args()
     output_path = os.path.join(args.output_path, 'train_output')
     test_output_path = os.path.join(args.output_path, 'test_output')
@@ -348,5 +327,4 @@ if __name__ == '__main__':
           args.adv,
           args.loss,
           args.opt,
-          args.transform,
-          args.attention)
+          args.transform)
