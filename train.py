@@ -51,7 +51,7 @@ class Trainer():
 
         if arg_transform:
             self.g_out, self.g_state_out = build_generator_transform(self.img_ph, reshaped_actions, 
-            														 batch_size=BATCH_SIZE, ksize=6)
+                                                                     batch_size=BATCH_SIZE, ksize=6)
             self.g_next_frame = self.g_out
             gt_output = self.next_frame_ph
             gt_stateout = self.next_state
@@ -70,7 +70,7 @@ class Trainer():
             reuse=True)
 
         g_psnr = build_psnr(self.next_frame_ph, self.g_next_frame)
-        g_l2_loss = tf.norm(self.g_out - gt_output, ord=NORM_ORDER, axis=None, keep_dims=False, name='l1_difference')/BATCH_SIZE
+        g_l2_loss = tf.norm(self.g_out-gt_output, ord=NORM_ORDER, axis=None, keep_dims=False, name='difference')/BATCH_SIZE
 
         if arg_transform:
             g_l2_loss *= L2_WEIGHT
@@ -95,7 +95,7 @@ class Trainer():
             optimizer = tf.train.AdamOptimizer
             lr = ADAM_LR
         else:
-        	raise ValueError('unexpected opt argument')
+            raise ValueError('unexpected opt argument')
 
         self.g_opt_op = optimizer(lr, name='g_opt').minimize(self.g_loss, var_list=self.g_vars)
         self.g_pretrain_opt_op = optimizer(lr, name='g_pretrain_opt').minimize(g_l2_loss, var_list=self.g_vars)
@@ -111,7 +111,6 @@ class Trainer():
         psnr_summary = tf.summary.scalar('g_psnr', g_psnr)
         self.merged_summaries = tf.summary.merge_all()
 
-
     def pretrain_g(self, input_images, next_frame, actions, state):
         _, g_res = self.sess.run([self.g_pretrain_opt_op, self.g_loss], feed_dict={
             self.img_ph: input_images,
@@ -121,7 +120,6 @@ class Trainer():
         })
         return g_res
 
-
     def train_g(self, input_images, next_frame, actions, state):
         _, gen_next_frames = self.sess.run([self.g_opt_op, self.g_next_frame], feed_dict={
             self.img_ph: input_images,
@@ -130,7 +128,6 @@ class Trainer():
             self.next_state: state
         })
         return gen_next_frames
-
 
     def train_d(self, input_images, next_frame, actions, summarize=False):
         fd={
@@ -147,13 +144,13 @@ class Trainer():
             return None
 
     def test(self, input_images, next_frame, actions):
-    	tensors = [self.g_next_frame, self.g_state_out, self.merged_summaries]
-    	fd = {
-    		  self.img_ph: input_images,
+        tensors = [self.g_next_frame, self.g_state_out, self.merged_summaries]
+        fd = {
+              self.img_ph: input_images,
               self.next_frame_ph: next_frame,
               self.action_ph: actions,
               self.next_state: np.zeros((BATCH_SIZE, 5))
-             }
+        }
         gen_next_frames, gen_next_state, summ = self.sess.run(tensors, feed_dict=fd)
         return gen_next_frames, gen_next_state, summ
 
@@ -163,10 +160,10 @@ class Trainer():
         current_frame = input_images[:,0,:,:,:]
         current_state = test_actions[:,0,5:]
         for j in range(0, 6):
-        	acs = np.concatenate((np.squeeze(test_actions[:,j*2,:5]), current_state), axis=1)
+            acs = np.concatenate((np.squeeze(test_actions[:,j*2,:5]), current_state), axis=1)
             test_output, test_state, test_summ = self.test(current_frame,
-                                                    	   test_next_frame[:,j*2,:,:,:],
-                                                    	   acs)
+                                                           test_next_frame[:,j*2,:,:,:],
+                                                           acs)
             if j==0:
                 recorded_summ = test_summ
             predicted.append(test_output)
@@ -179,7 +176,17 @@ class Trainer():
         return predicted, current_frame[1:7]
 
 
-def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv, arg_loss, arg_opt, arg_transform, arg_attention):
+def train(input_path, 
+          output_path, 
+          test_output_path, 
+          log_dir, 
+          model_dir, 
+          arg_adv, 
+          arg_loss, 
+          arg_opt, 
+          arg_transform, 
+          arg_attention):
+
     img_data_train, action_data_train = build_tfrecord_input(
         BATCH_SIZE,
         input_path,
@@ -282,14 +289,12 @@ def train(input_path, output_path, test_output_path, log_dir, model_dir, arg_adv
                 current_state = state_batch[:,0]
 
                 for j in range(0, test_input.shape[1]-1):
-                	acs = np.concatenate((np.squeeze(test_actions[:,j,:5]), current_state), axis=1)
+                    acs = np.concatenate((np.squeeze(test_actions[:,j,:5]), current_state), axis=1)
                     test_output, test_state, test_summ = trainer.test(current_frame,
-                                                            		  test_next_frame[:,j,:,:,:],
-                                                            		  acs)
-
+                                                                      test_next_frame[:,j,:,:,:],
+                                                                      acs)
                     if j==0:
                         recorded_summ = test_summ
-
                     predicted.append(test_output)
                     current_frame = test_output
                     current_state = test_state
@@ -309,8 +314,8 @@ if __name__ == '__main__':
     parser.add_argument('input_path', type=str)
     parser.add_argument('output_path', type=str)
     parser.add_argument('--adv', action='store_true')
-    parser.add_argument('--loss', type=str, default='wass')
-    parser.add_argument('--opt', type=str, default='rmsprop')
+    parser.add_argument('--loss', type=str, default='bce')
+    parser.add_argument('--opt', type=str, default='adam')
     parser.add_argument('--transform', action='store_true')
     args = parser.parse_args()
     output_path = os.path.join(args.output_path, 'train_output')

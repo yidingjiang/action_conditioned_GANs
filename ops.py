@@ -32,7 +32,7 @@ def build_g_adv_loss(d_out_gen, arg_loss):
     elif arg_loss == 'wass':
         return tf.reduce_mean(d_out_gen)
     else:
-    	raise ValueError('unexpected loss argument')
+        raise ValueError('unexpected loss argument')
 
 def build_d_loss(d_out_direct, d_out_gen, arg_loss):
     if arg_loss == 'bce':
@@ -44,14 +44,14 @@ def build_d_loss(d_out_direct, d_out_gen, arg_loss):
         d_direct_loss = tf.reduce_mean(d_out_direct)
         d_gen_loss = -tf.reduce_mean(d_out_gen)
     else:
-    	raise ValueError('unexpected loss argument')
+        raise ValueError('unexpected loss argument')
     d_direct_loss_summary = tf.summary.scalar('discriminator_direct_loss', d_direct_loss)
     d_gen_loss_summary = tf.summary.scalar('discriminator_gen_loss', d_gen_loss)
     return d_direct_loss + d_gen_loss
 
 def cdna_transformation(prev_image, cdna_input, num_masks, color_channels):
     """
-    Copied and modified from:
+    Adapted from:
     https:https://github.com/tensorflow/models/tree/master/video_prediction
 
     Apply convolutional dynamic neural advection to previous image.

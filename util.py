@@ -15,16 +15,19 @@ def build_all_mask(num_frame):
         masks.append(m)
     return np.array(masks).astype(bool)
 
-def save_samples(output_path, input_sample, generated_sample, gt, sample_number, gif=False):
+def save_samples(output_path, 
+                 input_sample, 
+                 generated_sample, 
+                 ground_truth, 
+                 sample_number, 
+                 gif=False):
     input_sample = (255. / 2) * (input_sample + 1.)
     input_sample = input_sample.astype(np.uint8)
     generated_sample = (255. / 2) * (generated_sample + 1.)
     generated_sample = generated_sample.astype(np.uint8)
-    gt = (255. / 2) * (gt + 1.)
-    gt = gt.astype(np.uint8)
-    save_folder =  os.path.join(
-        output_path,
-        'sample{:d}'.format(sample_number))
+    ground_truth = (255. / 2) * (ground_truth + 1.)
+    ground_truth = ground_truth.astype(np.uint8)
+    save_folder =  os.path.join(output_path, 'sample{:d}'.format(sample_number))
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
     for i in range(input_sample.shape[0]):
@@ -33,7 +36,7 @@ def save_samples(output_path, input_sample, generated_sample, gt, sample_number,
             os.makedirs(vid_folder)
         vid = input_sample[i]
         if gif:
-            imageio.mimsave(os.path.join(vid_folder, 'gt.gif'), vid, duration=.25)
+            imageio.mimsave(os.path.join(vid_folder, 'ground_truth.gif'), vid, duration=.25)
         else:
             for j in range(int(vid.shape[0])):
                 save_path = os.path.join(vid_folder, 'frame{:d}.png'.format(j))
@@ -48,7 +51,7 @@ def save_samples(output_path, input_sample, generated_sample, gt, sample_number,
                 frame = vid[j]
                 plt.imsave(save_path, frame)
         if not gif:
-            vid = gt[i]
+            vid = ground_truth[i]
             for j in range(int(vid.shape[0])):
                 save_path = os.path.join(vid_folder, 'ground_truth{:d}.png'.format(j))
                 frame = vid[j]
