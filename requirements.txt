@@ -1,0 +1,7 @@
+tensorflow==1.0.0
+numpy
+matplotlib
+opencv-python
+pillow
+imageio
+h5py
