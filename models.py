@@ -3,9 +3,6 @@ import tensorflow.contrib.slim as slim
 from tensorflow import gfile
 import numpy as np
 import os
-import matplotlib.pyplot as plt
-import PIL
-import imageio
 
 def build_generator(images, actions, reuse=False):
     with tf.variable_scope('g', reuse=reuse):
