@@ -44,6 +44,6 @@ Download from https://sites.google.com/site/brainrobotdata/home/push-dataset
 
 Note: Input frames and actions need to be numpy files for flexibility.
 
-## Training details
+## Testing details
 * `--dna`: boolean, whether to use dynamic neural advection
   * True (default)
