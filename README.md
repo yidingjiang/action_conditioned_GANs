@@ -3,7 +3,7 @@ This is an implementation of conditional video prediction based on various gener
 
 **Some results** (many gifs!): [here](https://github.com/yidingjiang/Action_Conditioned_GAN_demo)
 
-## Requirements
+## Dependencies
 * tensorflow1.0 (tested on 1.0)
 * numpy
 * matplotlib
