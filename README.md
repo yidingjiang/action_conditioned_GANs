@@ -1,7 +1,7 @@
 # Action Conditioned GANS
-This is an implementation of conditional video prediction based on various generative adversarial networks.
+This is an implementation of conditional video prediction based on various generative adversarial networks. The technical details of this project is outlined [here](https://github.com/yidingjiang/action_conditioned_GANs/blob/master/report/report.pdf)
 
-**Some results** (many gifs!): https://github.com/yidingjiang/Action_Conditioned_GAN_demo 
+**Some results** (many gifs!): [here](https://github.com/yidingjiang/Action_Conditioned_GAN_demo)
 
 ## Requirements
 * tensorflow1.0 (tested on 1.0)
