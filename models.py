@@ -1,8 +1,9 @@
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
-from tensorflow import gfile
 import numpy as np
 import os
+
+from ops import lrelu
 
 def build_generator(images, actions, reuse=False):
     with tf.variable_scope('g', reuse=reuse):
@@ -71,3 +72,18 @@ def build_generator_transform(images,
             out = tf.reduce_sum(out, 3)
 
             return out, tf.squeeze(state_out)
+
+def build_discriminator(inputs,
+                        actions,
+                        reuse=False):
+    with tf.variable_scope('d', reuse=reuse):
+        with slim.argscope([slim.conv2d], activation_fn=lrelu, stride=2, 
+                           padding='SAME', normalizer_fn=slim.batch_norm, reuse=reuse):
+            out = slim.conv2d(inputs, 64, [5, 5], scope='conv1')
+            out = slim.conv2d(out, 128, [5, 5], scope='conv2')
+            out = slim.conv2d(tf.concat(values=[out, actions], axis=3), 128, [5, 5], scope='conv3')
+            out = slim.conv2d(out, 256, [5, 5], scope='conv4')
+            out = slim.conv2d(out, 512, [5, 5], scope='conv5')
+            out = slim.conv2d(out, 1, [2, 2], activation_fn=None, 
+                              stride=1, scope='conv6', reuse=reuse)
+            return out
