@@ -1,9 +1,9 @@
 # Action Conditioned GANS
-This is an implementation of conditional video prediction based on various generative adversarial networks.
+This is an implementation of conditional video prediction based on various generative adversarial networks. The technical details of this project are outlined [here](https://github.com/yidingjiang/action_conditioned_GANs/blob/master/report/report.pdf).
 
-**Some results** (many gifs!): https://github.com/yidingjiang/Action_Conditioned_GAN_demo 
+**Some results** (many gifs!): [here](https://github.com/yidingjiang/Action_Conditioned_GAN_demo)
 
-## Requirements
+## Dependencies
 * tensorflow1.0 (tested on 1.0)
 * numpy
 * matplotlib
@@ -44,6 +44,6 @@ Download from https://sites.google.com/site/brainrobotdata/home/push-dataset
 
 Note: Input frames and actions need to be numpy files for flexibility.
 
-## Training details
+## Testing details
 * `--dna`: boolean, whether to use dynamic neural advection
   * True (default)
